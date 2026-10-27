@@ -1,6 +1,6 @@
 # VERIFICATION — 交付验证记录
 
-验证日期：2026-10-27。版本：MolBrief 0.2.0 自部署版。本记录区分本轮实际部署与原始交付验证。服务器 P0、源站 TLS 与从 ECS 经公网域名的 HTTPS 检查已通过；Mac 当前访问异常、实际手机体验及第三方 API 尚待验证。
+验证日期：2026-10-27。版本：MolBrief 0.2.0 自部署版。本记录区分本轮实际部署与原始交付验证。服务器 P0、源站 TLS 与从 ECS 经公网域名的 HTTPS 检查已通过，用户确认手机能看到登录页；Mac 当前访问异常、手机登录后体验及第三方 API 尚待验证。
 
 ## 本轮本机与 ECS 验证
 
@@ -20,11 +20,13 @@
 | 干净状态与备份 | 测试数据已恢复：8 篇文章、4 个默认主题，无收藏 / 已读；干净备份已复制到宿主及 Mac，Mac 的 Node.js 24 SQLite 再次读回通过 |
 | DNS / TLS | Cloudflare 已代理 A 记录，权威 DNS 与公网响应通过；Let's Encrypt webroot 证书已签发，到期 2027-01-25；续期 timer enabled / active，并配置 Nginx 检查及 reload 的 deploy hook |
 | 公网 HTTPS | 从 ECS 通过真实域名执行 10 项检查全部通过，详见下文 |
-| Mac 与手机 | Mac curl / 内嵌浏览器访问域名出现 `ERR_CONNECTION_CLOSED`，原因未确定；不能记作 Mac 浏览器通过，实际手机尚未测试 |
-| Git 交接 | 用户提供公共仓库 `https://github.com/Xiang-Leo/MolBrief.git`；以 `self-hosted/` 为仓库根建立 `main`，首次推送及服务器 Git 同步进行中 |
+| Mac 与手机 | 用户确认手机能看到登录页；手机登录后的收藏、声音和主屏幕入口仍待验收。Mac curl / 内嵌浏览器访问域名出现 `ERR_CONNECTION_CLOSED`，原因未确定，不能记作 Mac 浏览器通过 |
+| Git 交接 | `https://github.com/Xiang-Leo/MolBrief.git` 首次推送与服务器同步已完成，`main` 跟踪 `origin/main`；首次同步时三处 HEAD 一致、服务器 diff 为空，保留原有 `.env` 与备份 |
+| 源码交付检查 | 根目录为原包 `self-hosted/`，不含外层 reference 归档；首推前检查 58 个暂存文件，无真实环境值、密码、私钥或运行数据；本轮未改业务逻辑，新增 Nginx 模板及秘密 / 运行文件忽略规则 |
+| 续期演练 | `certbot renew --cert-name todayai.xxlab.xyz --dry-run --run-deploy-hooks --no-random-sleep-on-renew` 通过；模拟续期及 Nginx 检查 / reload 的 deploy hook 均成功，日常续期 timer 保持启用 |
 | 外部服务调用 | 本轮 0 次付费 API 调用；Parallel、摘要模型、MiniMax 仍未接通验收 |
 
-服务器连接、配置位置与私有凭据文件位置见 `DEPLOYMENT.md`。本轮未修改其他 Nginx 站点。实际手机声音与主屏幕入口仍需验证。
+服务器连接、配置位置与私有凭据文件位置见 `DEPLOYMENT.md`。本轮未修改其他 Nginx 站点，仓库提供 `deploy/nginx.conf.example`。手机登录后的收藏、实际声音与主屏幕入口仍需验证。后续交接文档会继续提交同步，最新版本用 `git rev-parse HEAD` 核对。
 
 ### 从 ECS 经公网 HTTPS 的 10 项检查
 
@@ -92,4 +94,4 @@
 
 ## 下一步验收
 
-保留现有账号、`.env` 和持久卷。先核实 Mac / 实际手机访问路径及浏览器声音、主屏幕体验；服务器 P0 检查不需重新初始化。随后按 `ROADMAP.md` 的 P1，在获得用户 API 配置后，以少量真实材料验证搜索、中文解读、来源与收藏流程。第三方服务和后续定时更新仍不能记作已接通。
+保留现有账号、`.env` 和持久卷。跟进 Mac 访问异常，继续验收手机登录后的收藏、声音及主屏幕体验；用户已确认手机登录页可见，服务器 P0 检查不需重新初始化。随后按 `ROADMAP.md` 的 P1，在获得用户 API 配置后，以少量真实材料验证搜索、中文解读、来源与收藏流程。第三方服务和后续定时更新仍不能记作已接通。

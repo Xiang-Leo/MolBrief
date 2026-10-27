@@ -16,11 +16,13 @@ docker compose ps
 
 当前 `APP_ORIGIN=https://todayai.xxlab.xyz`，账号为 `admin`。密码保存在本机私有文件 `/Users/xiangli/.config/molbrief/todayai.xxlab.xyz-login.txt`；`.env` 的私有备份为同目录下的 `todayai.xxlab.xyz.env`。文档不保存密码、哈希、会话密钥或令牌。
 
-服务器已有宿主 Nginx 占用 80 / 443，本次沿用该代理，**不启动附带的 Caddy Compose**。已新增 `/etc/nginx/sites-available/todayai.xxlab.xyz` 与对应 enabled 软链接，HTTPS 反向代理至 `127.0.0.1:3000`，HTTP ACME 验证目录为 `/var/www/molbrief-acme`；`nginx -t` 与 reload 成功。该账号的 sudo 需要密码，本次通过其既有 Docker 管理权限的一次性维护容器配置宿主 Nginx，未修改其他站点。
+服务器已有宿主 Nginx 占用 80 / 443，本次沿用该代理，**不启动附带的 Caddy Compose**。已新增 `/etc/nginx/sites-available/todayai.xxlab.xyz` 与对应 enabled 软链接，HTTPS 反向代理至 `127.0.0.1:3000`，HTTP ACME 验证目录为 `/var/www/molbrief-acme`；`nginx -t` 与 reload 成功。仓库内的 `deploy/nginx.conf.example` 为可复用模板，与运行配置仅有域名替换和专用日志差异。该账号的 sudo 需要密码，本次通过其既有 Docker 管理权限的一次性维护容器配置宿主 Nginx，未修改其他站点。
 
 Cloudflare 已添加并代理 A 记录 `todayai` → `43.156.73.7`，权威 DNS 与 Cloudflare 公网响应已验证。Certbot 已通过 webroot 签发 Let's Encrypt 证书 `/etc/letsencrypt/live/todayai.xxlab.xyz/fullchain.pem`，到期日为 2027-01-25；`certbot.timer` 已启用且 active，续期配置包含 Nginx 检查及 reload 的 deploy hook。
 
-服务器 P0 验收已通过：真实容器完成认证、重启持久化、重复导入、服务令牌隔离和备份读回；从 ECS 经公网 HTTPS 域名执行的 10 项检查全部通过。当前为 8 篇文章、4 个默认主题，无测试收藏或已读记录。当前 Mac 的 curl 与内嵌浏览器访问域名仍出现 `ERR_CONNECTION_CLOSED`，原因未确定；服务器侧的源站证书与 Cloudflare 公网访问均已通过，不能据此宣称 Mac 或实际手机验收通过。检查范围见 `VERIFICATION.md`。
+已执行 `certbot renew --cert-name todayai.xxlab.xyz --dry-run --run-deploy-hooks --no-random-sleep-on-renew`：模拟续期及 Nginx 检查 / reload 的 deploy hook 均成功。此参数仅跳过本次演练的随机等待，未改变日常续期任务。
+
+服务器 P0 验收已通过：真实容器完成认证、重启持久化、重复导入、服务令牌隔离和备份读回；从 ECS 经公网 HTTPS 域名执行的 10 项检查全部通过。当前为 8 篇文章、4 个默认主题，无测试收藏或已读记录。用户已确认手机能打开登录页；手机登录后的收藏、声音与主屏幕入口仍待验收。当前 Mac 的 curl 与内嵌浏览器访问域名仍出现 `ERR_CONNECTION_CLOSED`，原因未确定；服务器侧的源站证书与 Cloudflare 公网访问均已通过，不能据此宣称 Mac 浏览器验收通过。检查范围见 `VERIFICATION.md`。
 
 已生成干净备份 `molbrief-2026-10-27T06-18-24-620Z-2369d05b`，容器内位于 `/app/var/backups/`，并已复制到宿主 `/home/xiangxiang/molbrief/backups/` 与 Mac `/Users/xiangli/.config/molbrief/backups/` 下的同名目录。Mac 使用 Node.js 24 读回确认 8 篇文章、4 个主题且无测试收藏 / 已读。`.env` 另有前述私有备份，不在数据备份或源码中。
 
@@ -215,20 +217,17 @@ docker compose up -d --build
 
 ## 9. Git 仓库与更新
 
-用户已提供公共仓库 [Xiang-Leo/MolBrief](https://github.com/Xiang-Leo/MolBrief)。以本机 `self-hosted/` 为 Git 根目录，分支为 `main`，服务器 `/home/xiangxiang/molbrief` 将跟踪同一代码。首次提交、推送与服务器 Git 同步正在进行中，尚未记作完成。
+公共仓库 [Xiang-Leo/MolBrief](https://github.com/Xiang-Leo/MolBrief) 的首次提交与推送已完成。Git 根目录为原交付包中的 `self-hosted/`，不包含外层 `reference/` 归档；主分支为 `main`。服务器 `/home/xiangxiang/molbrief` 已建立 `main` 并跟踪 `origin/main`，首次同步时与本机、GitHub 的提交一致，`git diff` 为空，原有 `.env` 和备份均已保留。
 
-首次建立仓库的命令如下；已有 `.git` 时不要重复初始化或添加 remote：
+后续文档和源码会继续更新，不以文档中的固定提交号判断版本。在本机和服务器分别核对：
 
 ```bash
-git init
-git add .
-git commit -m "Initial MolBrief self-hosted version"
-git branch -M main
-git remote add origin https://github.com/Xiang-Leo/MolBrief.git
-git push -u origin main
+git rev-parse HEAD
+git rev-parse origin/main
+git status --short
 ```
 
-`.gitignore` 排除了 `.env`、运行数据、备份、`node_modules` 和构建产物，镜像中也已核对不含 `.env`。公共仓库中仅提交源码与非秘密配置示例。
+本轮未修改业务逻辑，新增 Nginx 模板并补充 `.gitignore`，排除 SQLite、密钥和本机凭据文件；既有规则同时排除 `.env`、运行数据、备份、`node_modules` 和构建产物。首推前检查 58 个暂存文件，未发现真实环境变量值、登录密码、私钥或运行数据；镜像中也已核对不含 `.env`。
 
 后续在本地改代码并推送，服务器在现有目录执行 `git pull --ff-only` 和 `docker compose up -d --build`。更新前按第 8 节备份，保留现有 `.env` 与数据卷，不要重新运行账号初始化。全新服务器才需要 clone 和首次配置。
 
