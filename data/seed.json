@@ -1,0 +1,210 @@
+[
+  {
+    "id": "art-38186e882bea3f04",
+    "title": "阿斯利康与 Oracle 探索 AI 临床试验匹配与真实世界证据",
+    "originalTitle": "Oracle and AstraZeneca Partner to Advance AI-enabled Healthcare Innovation",
+    "category": "产业",
+    "publishedAt": "2026-10-20",
+    "url": "https://www.oracle.com/news/announcement/oracle-and-astrazeneca-partner-to-advance-ai-enabled-healthcare-2026-10-20/",
+    "source": "Oracle 官方公告",
+    "type": "公告",
+    "summary": "Oracle 与阿斯利康宣布一项非约束性合作协议，拟结合临床研究经验、真实世界数据、云与 AI 能力，探索患者与试验匹配、证据生成及诊疗流程中的研究信息应用。双方计划建立共同治理与效果指标，再评估相关方案能否扩展到更多疾病和地区。",
+    "keyPoints": [
+      "合作仍处于探索安排，公告没有报告实际改善幅度。",
+      "拟关注患者招募、试验设计、安全监测和研究证据应用。"
+    ],
+    "limitations": "这是公司发布的合作计划，不能视为已经证明临床试验效率或患者结局改善。",
+    "topics": [
+      "AI 制药",
+      "阿斯利康",
+      "临床试验",
+      "真实世界数据"
+    ],
+    "coverSource": null,
+    "readingBasis": "官方公告正文",
+    "group": "近期动态",
+    "collectedAt": "2026-10-26T21:26:32.818435+00:00"
+  },
+  {
+    "id": "art-6939ebc275588bb7",
+    "title": "英矽智能预告 ISM6331 首次人体研究数据，关注 AI 分子的临床验证",
+    "originalTitle": "Insilico Medicine to present first human data for AI-designed cancer drug ISM6331 at ESMO 2026",
+    "category": "临床",
+    "publishedAt": "2026-10-21",
+    "url": "https://insilico.com/news/pr08f4fbd585bd20e07517-insilico-medicine-to-present-first-human-data-for-ai-designed-cancer-drug-ism6331-at-esmo-2026",
+    "source": "Insilico Medicine 官方公告",
+    "type": "公告",
+    "summary": "英矽智能公告称，AI 设计的口服 pan-TEAD 抑制剂 ISM6331 首次人体一期研究摘要已在 ESMO 网站发布，详细更新计划于 10 月 25 日报告。研究在间皮瘤及其他晚期实体瘤患者中评估安全性、耐受性、药代动力学和初步抗肿瘤活性。",
+    "keyPoints": [
+      "公告日期是 10 月 21 日，内容属于会议报告预告。",
+      "一期研究重点包括剂量限制性毒性和推荐二期剂量。"
+    ],
+    "limitations": "本卡未核对 10 月 25 日实际报告与后续结果，不据此宣称药物已证实有效。",
+    "topics": [
+      "AI 制药",
+      "英矽智能",
+      "临床一期",
+      "TEAD"
+    ],
+    "coverSource": null,
+    "readingBasis": "公司会议预告正文",
+    "group": "近期动态",
+    "collectedAt": "2026-10-26T21:26:32.818455+00:00"
+  },
+  {
+    "id": "art-3925b096552891e4",
+    "title": "英矽智能与施维雅合作达到首个早期研发里程碑",
+    "originalTitle": "Insilico Medicine and Servier Achieve First Milestone in AI-Driven R&D Collaboration",
+    "category": "产业",
+    "publishedAt": "2026-10-20",
+    "url": "https://insilico.com/news/prae42d246d48ff71179df-insilico-medicine-and-servier-achieve-first-milestone-in-ai-driven-r-d-collaboration-triggering-an-u",
+    "source": "Insilico Medicine 官方公告",
+    "type": "公告",
+    "summary": "英矽智能称，与施维雅的多年度肿瘤药物发现合作已启动两个研发项目并完成靶点提名，其中首个项目达到预设的早期发现里程碑，触发金额未披露的付款。公告同时重申合作总潜在价值及首付款与近期研发款，阅读时需与本次到账金额区分。",
+    "keyPoints": [
+      "本次里程碑付款金额未披露。",
+      "潜在总合作价值最高 8.88 亿美元；首付款与近期研发款合计 3,200 万美元。"
+    ],
+    "limitations": "早期发现里程碑不代表临床验证完成；总潜在价值也不代表已经收到全部款项。",
+    "topics": [
+      "AI 制药",
+      "研发合作",
+      "英矽智能",
+      "施维雅"
+    ],
+    "coverSource": null,
+    "readingBasis": "官方公告正文；日期由官方检索结果标注",
+    "group": "近期动态",
+    "collectedAt": "2026-10-26T21:26:32.818459+00:00"
+  },
+  {
+    "id": "art-042aefd393164976",
+    "title": "赛诺菲公布 duvakitug 二期延长期数据：解读时关注入组人群",
+    "originalTitle": "UEG Week: Sanofi and Teva’s duvakitug maintained long-term positive outcomes in new phase 2b data…",
+    "category": "临床",
+    "publishedAt": "2026-10-20",
+    "url": "https://www.sanofi.com/en/media-room/press-releases/2026/2026-10-20-12-00-00-3384293",
+    "source": "Sanofi 官方公告",
+    "type": "公告",
+    "summary": "赛诺菲与梯瓦公布抗 TL1A 单抗 duvakitug 在溃疡性结肠炎和克罗恩病中的二期长期延伸研究结果。进入维持期的是诱导治疗后应答的患者，公司报告了 44 周时的临床与内镜指标。理解结果时，需要保留这一入组条件以及描述性分析的范围。",
+    "keyPoints": [
+      "延伸研究纳入 130 名诱导治疗应答者。",
+      "患者重新分配至两种剂量，公告中的部分疗效数据标为描述性分析。"
+    ],
+    "limitations": "不能把应答者延伸研究的比例直接解释为所有初治患者的疗效，也不能据此认定已获批。",
+    "topics": [
+      "抗体药物",
+      "TL1A",
+      "炎症性肠病",
+      "临床研究"
+    ],
+    "coverSource": null,
+    "readingBasis": "官方公告正文",
+    "group": "近期动态",
+    "collectedAt": "2026-10-26T21:26:32.818461+00:00"
+  },
+  {
+    "id": "art-1aa9f78a05732e6c",
+    "title": "OFAntibody 将从头抗体设计扩展到多个结合界面",
+    "originalTitle": "De novo design of monoclonal and bispecific antibodies with OFAntibody",
+    "category": "研究",
+    "publishedAt": "2026-10-07",
+    "url": "https://arxiv.org/abs/2610.09548",
+    "source": "arXiv · Valhalla Team",
+    "type": "预印本",
+    "summary": "这篇预印本提出面向单抗和双特异性抗体的全原子生成框架，尝试在同一结构中协调多个表位与结合界面。作者在摘要中列出串联 VHH、diabody 和 CODV 等构型，并报告候选排序及结构、能量筛选指标，可作为多特异性结构设计的延伸阅读。",
+    "keyPoints": [
+      "方法关注多组分复合物与多个结合界面的几何兼容性。",
+      "摘要包含计算基准指标，不能直接换算为实验命中率。"
+    ],
+    "limitations": "本卡仅基于预印本摘要，未完成全文方法与实验验证审阅。",
+    "topics": [
+      "抗体设计",
+      "双特异性抗体",
+      "VHH",
+      "生成式 AI"
+    ],
+    "coverSource": null,
+    "readingBasis": "预印本摘要",
+    "group": "延伸阅读",
+    "collectedAt": "2026-10-26T21:26:32.818462+00:00"
+  },
+  {
+    "id": "art-3f1bd5fb580b22c5",
+    "title": "GenCDR：以框架区为条件，联合生成可变长度 CDR",
+    "originalTitle": "GenCDR",
+    "category": "工具",
+    "publishedAt": null,
+    "url": "https://github.com/AstraZeneca/GenCDR",
+    "source": "AstraZeneca 作者仓库",
+    "type": "工具文档",
+    "summary": "GenCDR 仓库介绍了一组以框架区为条件的抗体语言模型，可联合生成不同长度的 CDR1、CDR2 和 CDR3，并提供生成、评分与偏好对齐功能。模型家族覆盖普通抗体链、配对重轻链及 VHH，适合从保留框架、改变 CDR 的设计思路切入学习。",
+    "keyPoints": [
+      "框架区作为输入条件，CDR 作为生成内容。",
+      "仓库提供 Python、命令行接口与模型权重获取说明。"
+    ],
+    "limitations": "此条为工具资料，未确认首次发布日期；生成合理序列不等同于得到目标结合分子。",
+    "topics": [
+      "CDR 生成",
+      "VHH",
+      "抗体语言模型",
+      "开源工具"
+    ],
+    "coverSource": null,
+    "readingBasis": "作者仓库 README",
+    "group": "延伸阅读",
+    "collectedAt": "2026-10-26T21:26:32.818464+00:00"
+  },
+  {
+    "id": "art-83f75341fa461908",
+    "title": "Pharma.AI 秋季更新：专业模型、研究工具与 MCP 工作流",
+    "originalTitle": "Pharma.AI Fall 2026 Release Recap: Transforming Drug Discovery and Development Through Specialized Models and AI Agents",
+    "category": "工具",
+    "publishedAt": "2026-10-14",
+    "url": "https://insilico.com/news/pr0bec4e2b4798e39265b8-pharma-ai-fall-2026-release-recap-transforming-drug-discovery-and-development-through-specialized-mo",
+    "source": "Insilico Medicine 官方发布",
+    "type": "公告",
+    "summary": "英矽智能介绍 Pharma.AI 秋季更新，将专业模型训练、任务评测、化学与生物学工具以及 MCP 接入组织为研究工作流。公告涉及 ADMET、靶点发现、表位预测等任务，并描述如何由兼容的 AI 助手调用工具，适合用来观察科研软件与智能体的连接方式。",
+    "keyPoints": [
+      "覆盖专业模型、任务评测与具体药物研发工具。",
+      "MCP 用于让兼容的 AI 助手调用相关平台功能。"
+    ],
+    "limitations": "这是供应商的产品说明，实际可用性、授权范围及性能需另行核验。",
+    "topics": [
+      "AI 智能体",
+      "MCP",
+      "AI 制药",
+      "研发工具"
+    ],
+    "coverSource": null,
+    "readingBasis": "官方产品公告；日期由官方检索结果标注",
+    "group": "延伸阅读",
+    "collectedAt": "2026-10-26T21:26:32.818466+00:00"
+  },
+  {
+    "id": "art-124718f188158512",
+    "title": "RFantibody：把骨架生成、序列设计与结构筛选连成流程",
+    "originalTitle": "RFantibody",
+    "category": "工具",
+    "publishedAt": null,
+    "url": "https://github.com/RosettaCommons/RFantibody",
+    "source": "RosettaCommons 作者仓库",
+    "type": "工具文档",
+    "summary": "RFantibody 的官方仓库将从头抗体与纳米抗体设计组织为三个主要步骤：使用抗体微调版 RFdiffusion 生成骨架，利用 ProteinMPNN 设计序列，再用抗体微调版 RoseTTAFold2 进行计算筛选。仓库同时提供框架输入、使用说明与中间结果检查方式。",
+    "keyPoints": [
+      "结构生成、序列设计与计算筛选是可分别检查的步骤。",
+      "工具文档可帮助理解表位条件、框架输入与筛选结果的关系。"
+    ],
+    "limitations": "这是工具工作流简介，未确认首次发布日期；计算筛选结果仍需实验验证。",
+    "topics": [
+      "抗体设计",
+      "VHH",
+      "RFdiffusion",
+      "开源工具"
+    ],
+    "coverSource": null,
+    "readingBasis": "作者仓库 README",
+    "group": "延伸阅读",
+    "collectedAt": "2026-10-26T21:26:32.818467+00:00"
+  }
+]

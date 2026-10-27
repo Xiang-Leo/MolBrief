@@ -1,0 +1,36 @@
+{
+  "name": "molbrief",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "dev": "next dev --hostname 127.0.0.1",
+    "build": "next build --webpack",
+    "start": "next start --hostname 0.0.0.0",
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-transform-types --test tests/*.test.mjs",
+    "setup": "node scripts/setup.mjs",
+    "db:migrate": "node --env-file-if-exists=.env scripts/migrate.mjs",
+    "backup": "node --env-file-if-exists=.env scripts/backup.mjs",
+    "smoke": "node tests/production-smoke.mjs",
+    "import:content": "node --env-file-if-exists=.env scripts/import-content.mjs"
+  },
+  "dependencies": {
+    "lucide-react": "1.31.0",
+    "next": "16.4.3",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "drizzle-kit": "0.31.10",
+    "drizzle-orm": "0.45.2",
+    "typescript": "5.9.3"
+  }
+}
