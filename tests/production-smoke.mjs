@@ -114,6 +114,33 @@ try {
   assert.equal(state.signedIn, true); assert.equal(state.topics.length, 4); assert.equal(state.capabilities.llm, false);
   pass('owner preferences initialize once and APIs remain unconfigured');
 
+  assert.equal((await request('/api/collection')).status, 401);
+  assert.equal((await request('/api/collection', { service: true })).status, 401);
+  assert.equal((await request('/api/collection', { service: true, body: { action: 'run' } })).status, 401);
+  assert.equal((await request('/api/collection/tick', { body: {} })).status, 401);
+  assert.equal((await request('/api/collection/tick', { session: true, body: {} })).status, 401);
+  pass('collection settings require owner and worker execution requires its service token');
+  let collection = await ownerJson('/api/collection');
+  assert.equal(collection.settings.hour, 8); assert.equal(collection.settings.pubmed, true);
+  assert.equal(collection.settings.web, false); assert.equal(collection.settings.summarize, false);
+  assert.ok(!JSON.stringify(collection).includes(serviceToken));
+  assert.ok(!JSON.stringify(collection).includes(environment.SESSION_SECRET));
+  assert.equal((await request('/api/collection', { session: true, body: { action: 'save', settings: { hour: 99 } } })).status, 400);
+  assert.equal((await request('/api/collection', { session: true, body: { action: 'save', settings: { enabled: false } }, headers: { Origin: 'https://different.example' } })).status, 403);
+  assert.equal((await request('/api/collection/tick', { service: true, body: {}, headers: { Origin: 'https://different.example' } })).status, 403);
+  collection = await ownerJson('/api/collection', { action: 'save', settings: { enabled: false, hour: 9, maxNewPerRun: 3 } });
+  assert.equal(collection.settings.enabled, false); assert.equal(collection.settings.hour, 9);
+  pass('collection schedule is explicit, secret-free and validates same-origin settings');
+  response = await request('/api/collection/tick', { service: true, body: {}, headers: { Origin: origin } });
+  assert.equal(response.status, 200);
+  collection = await response.json();
+  assert.equal(collection.worker.healthy, true); assert.equal(collection.runs.length, 0);
+  response = await request('/api/collection', { session: true, body: { action: 'run' } });
+  assert.equal(response.status, 202); assert.equal((await response.json()).queued, true);
+  response = await request('/api/collection', { session: true, body: { action: 'run' } });
+  assert.equal(response.status, 202); assert.equal((await response.json()).queued, true);
+  pass('worker heartbeat without a due job makes no provider calls and owner can queue one manual run');
+
   const emptyBackup = await backupInto(path.join(temporary, 'before-settings-backups'));
   assert.equal(emptyBackup.metadata.containsEncryptedServiceCredentials, false);
   assert.equal(emptyBackup.metadata.requiresSessionSecretForSettingsRestore, false);
@@ -280,6 +307,10 @@ try {
   assert.equal(settings.services.llm.status, 'unconfigured'); assert.ok(!JSON.stringify(settings).includes(dummyModelKey));
   assert.ok((await ownerJson('/api/feed')).articles.some(item => item.entities?.some(entity => entity.name === 'Smoke curated drug')));
   pass('bookmarks, preferences, rich article edits and encrypted settings survive a process restart');
+  collection = await ownerJson('/api/collection');
+  assert.equal(collection.settings.hour, 9); assert.equal(collection.settings.maxNewPerRun, 3);
+  assert.equal(collection.settings.enabled, false); assert.equal(collection.queued, true);
+  pass('collection settings, queued request and schedule survive a production process restart');
   response = await request('/api/session', { session: true, body: { action: 'logout' }, headers: { Origin: origin } });
   assert.equal(response.status, 200); assert.ok(response.headers.get('set-cookie')?.toLowerCase().includes('max-age=0'));
   pass('logout clears the browser session cookie');

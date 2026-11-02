@@ -123,3 +123,18 @@ test('malformed provider responses cannot masquerade as a successful empty searc
     ? Response.json({ error: 'bad upstream response' }) : Response.json({ errCode: 1 })
   }), LiteratureSearchError);
 });
+
+test('collection cancellation aborts the provider request without starting a fallback request', async () => {
+  const controller = new AbortController();
+  let calls = 0, began;
+  const ready = new Promise(resolve => { began = resolve; });
+  const pending = searchLiterature('nanobody', { now, state: state(), signal: controller.signal, fetcher: async (_url, options) => {
+    calls++; began();
+    return new Promise((_resolve, reject) => options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true }));
+  } });
+  await ready; controller.abort();
+  await assert.rejects(pending, error => error.name === 'AbortError');
+  assert.equal(calls, 1);
+  await assert.rejects(searchLiterature('nanobody', { signal: controller.signal, fetcher: async () => { calls++; } }), error => error.name === 'AbortError');
+  assert.equal(calls, 1);
+});

@@ -11,6 +11,7 @@ import {
 import seedData from "@/data/seed.json";
 import ServiceSettingsPanel from "./service-settings";
 import KnowledgePanel from "./knowledge-panel";
+import CollectionSettingsPanel from "./collection-settings";
 import { buildKnowledgeDirectory, ENTITY_TYPE_LABELS } from "@/lib/knowledge-core";
 import type { ArticleEntity } from "@/lib/knowledge-types";
 import {
@@ -18,6 +19,11 @@ import {
 } from "@/lib/molbrief-types";
 
 export type View = "today" | "discover" | "saved" | "topics" | "settings" | "knowledge";
+type CollectionSummary = {
+  settings:{enabled:boolean;hour:number};nextRunAt:string|null;running:boolean;queued:boolean;
+  worker:{lastSeenAt:string|null;healthy:boolean};
+  runs:{id:string;status:string;finishedAt:string|null;added:number}[];
+};
 const viewPaths: Record<View, string> = { today: "/", discover: "/discover", saved: "/saved", topics: "/topics", settings: "/settings", knowledge: "/knowledge" };
 const categories=["全部","产业","研究","工具","临床"];
 const categoryNames:Record<string,string>={全部:"全部内容",产业:"产业动态",研究:"研究论文",工具:"AI 工具",临床:"临床进展"};
@@ -49,6 +55,7 @@ type ApiResponses = {
   summarize: { article: Article };
   audio: { id: string; cached: boolean };
   article: { article: Article };
+  collection: CollectionSummary;
 };
 async function api<P extends keyof ApiResponses>(path:P,body?:unknown):Promise<ApiResponses[P]> {
   const response=await fetch("/api/"+path,body?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}:{cache:"no-store"});
@@ -94,6 +101,8 @@ export default function MolBrief({signedIn,displayName,initialView="today",initi
   const [searchError,setSearchError]=useState("");
   const [resultLabel,setResultLabel]=useState("");
   const [refreshing,setRefreshing]=useState(false);
+  const [collection,setCollection]=useState<CollectionSummary|null>(null);
+  const lastCollection=useRef<string|null>(null);
   const [reader,setReader]=useState<Article|null>(null);
   const [toast,setToast]=useState("");
   const [configModal,setConfigModal]=useState<string|null>(null);
@@ -146,6 +155,28 @@ export default function MolBrief({signedIn,displayName,initialView="today",initi
       window.removeEventListener("beforeinstallprompt",beforeInstall);
       if(toastTimer.current)clearTimeout(toastTimer.current);
     };
+  },[]);
+  useEffect(()=>{
+    let active=true;
+    const load=async()=>{
+      if(document.visibilityState==="hidden")return;
+      try{
+        const data=await api("collection") as CollectionSummary;
+        if(!active)return;
+        setCollection(data);
+        const complete=data.runs.find(run=>run.finishedAt);
+        const fingerprint=complete?complete.id+complete.finishedAt:null;
+        if(fingerprint&&fingerprint!==lastCollection.current){
+          lastCollection.current=fingerprint;
+          const feed=await api("feed");
+          if(active)setArticles(feed.articles);
+        }
+      }catch{ /* Manual refresh remains available during worker or network outages. */ }
+    };
+    void load();
+    const timer=setInterval(()=>{void load();},60000);
+    document.addEventListener("visibilitychange",load);
+    return ()=>{active=false;clearInterval(timer);document.removeEventListener("visibilitychange",load);};
   },[]);
   useEffect(()=>{
     if(reader&&!dialogRef.current?.open)dialogRef.current?.showModal();
@@ -377,6 +408,7 @@ export default function MolBrief({signedIn,displayName,initialView="today",initi
       <main className="workspace">
         {view==="today"&&<>
           <div className="page-heading"><div><div className="date-label"><span className="status-dot"/>{today}</div><h1>今天，读一点新进展<span>。</span></h1><p>从产业动态到研究前沿，为你的下一步积累线索。</p></div><button className="secondary-btn refresh-btn" onClick={refresh} disabled={refreshing}><RefreshCw size={15} className={refreshing?"spin":""}/>{refreshing?"正在刷新":"刷新内容"}</button></div>
+          {collection&&<section className="collection-notice" aria-label="自动采集状态"><div><strong>{collection.running?"正在采集新资料":collection.queued?"采集已排队":collection.settings.enabled?"每天 "+String(collection.settings.hour).padStart(2,"0")+":00 自动采集":"自动采集已暂停"}</strong><p>{collection.settings.enabled&&!collection.worker.healthy?"服务器采集进程尚未报到，请查看采集设置。":collection.nextRunAt?"下次："+new Date(collection.nextRunAt).toLocaleString("zh-CN",{timeZone:"Asia/Shanghai",month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit",hour12:false})+"（北京时间）":"可随时手动执行一次采集。"}{collection.runs.find(r=>r.finishedAt)&&" · 最近一轮新增 "+collection.runs.find(r=>r.finishedAt)!.added+" 篇"}</p></div><button className="text-link" onClick={()=>{changeView("settings");setTimeout(()=>document.getElementById("collection-settings")?.scrollIntoView({behavior:"smooth"}),100);}}>采集设置 <ArrowUpRight size={15}/></button></section>}
           <section className="briefing-banner">
             <div className="briefing-copy"><div className="banner-kicker"><AudioLines size={15}/> YOUR PERSONAL BRIEFING</div><h2>换一种方式，听见新知。</h2><p>{articles.length} 篇精选 · 药企、研究与 AI 制药<br className="mobile-break"/> · 每条都能回到原文</p><button onClick={()=>articles[0]&&listen(articles[0],articles)} className="listen-btn"><Play size={14} fill="currentColor"/>听一条精选<ArrowRight size={16}/></button><span className="audio-disclosure">{user.capabilities.tts&&user.preferences.audioMode==="cloud"?"AI 配音 · 使用已连接音色":"设备朗读 · 声音随浏览器而异"}</span></div>
             <div className="banner-art" aria-hidden="true"><div className="orbit orbit-one"/><div className="orbit orbit-two"/><div className="orbit-dot"/><div className="audio-disc"><Headphones size={40} strokeWidth={1.2}/></div><div className="waveform">{[9,18,28,13,36,47,24,56,36,64,39,22,43,29,18,34,13,8].map((h,i)=><i key={i} style={{height:h}}/>)}</div><div className="banner-caption">LESS NOISE. MORE INSIGHT.</div></div>
@@ -416,7 +448,7 @@ export default function MolBrief({signedIn,displayName,initialView="today",initi
           <form className="keyword-form" onKeyDown={e=>{if(e.key==="Enter"&&(e.nativeEvent.isComposing||e.nativeEvent.keyCode===229))e.preventDefault();}} onSubmit={e=>{e.preventDefault();const form=new FormData(e.currentTarget);const submitter=(e.nativeEvent as SubmitEvent).submitter as HTMLButtonElement|null;void addTopic(String(form.get("topicName")||""),String(form.get("topicQuery")||""),submitter?.value!=="save");}}>
             <label htmlFor="topic-name">关注关键词</label><div className="add-topic-form"><Plus size={20}/><input id="topic-name" name="topicName" value={topicName} onChange={e=>{setTopicName(e.target.value);setTopicError("");}} onKeyDown={e=>{if(e.key==="Enter"&&e.nativeEvent.isComposing)e.preventDefault();}} maxLength={70} placeholder="例如：英矽智能、duvakitug、TL1A" aria-label="新关注主题" required/></div>
             <label htmlFor="topic-query">英文检索式（可选）</label><input id="topic-query" name="topicQuery" value={topicQuery} onChange={e=>setTopicQuery(e.target.value)} maxLength={500} placeholder='例如："Insilico Medicine" 或 nanobody delivery'/>
-            <p className="field-note">中文名称用于显示；PubMed 更适合英文检索。添加后可立即检索，保存关注不会自动采集资讯。</p>
+            <p className="field-note">中文名称用于显示；PubMed 更适合英文检索。保存后，已开启的定时任务会按关注检索并收录资料。</p><button type="button" className="text-link" onClick={()=>changeView("settings")}>查看自动采集计划 <ArrowUpRight size={15}/></button>
             {topicError&&<p className="form-error" role="alert">{topicError}</p>}{topicNotice&&<p className="form-success" role="status">{topicNotice}</p>}
             <div className="keyword-actions"><button type="submit" value="search" className="primary-btn" disabled={topicBusy||!topicName.trim()}>{topicBusy?<Loader2 size={16} className="spin"/>:<Search size={16}/>}添加并检索</button><button type="submit" value="save" className="secondary-btn" disabled={topicBusy||!topicName.trim()}>仅保存关键词</button></div>
           </form>
@@ -429,6 +461,7 @@ export default function MolBrief({signedIn,displayName,initialView="today",initi
           <div className="page-heading"><div><div className="date-label"><Settings2 size={15}/> MAKE IT YOURS</div><h1>按照你的习惯，慢慢读<span>。</span></h1><p>声音、关注与服务连接，都由你掌握。</p></div></div>
           <div className="mobile-settings-switch"><button onClick={()=>changeView("topics")}>关注主题</button><button className="active">偏好与连接</button></div>
           <div className="settings-layout"><div>
+            <CollectionSettingsPanel onUpdated={()=>{void api("feed").then(data=>setArticles(data.articles)).catch(()=>{});void api("collection").then(setCollection).catch(()=>{});}}/>
             <section className="settings-panel"><div className="panel-title"><Headphones size={19}/><h2>听读偏好</h2></div><div className="setting-row"><div><strong>朗读方式</strong><p>设备朗读现在可用；AI 配音使用连接的固定音色。</p></div><select value={user.preferences.audioMode} onChange={e=>updatePreference({audioMode:e.target.value as "device"|"cloud"})} aria-label="朗读方式"><option value="device">设备朗读</option><option value="cloud" disabled={!user.capabilities.tts}>AI 配音{!user.capabilities.tts?" · 待连接":""}</option></select></div><div className="setting-row"><div><strong>设备声音</strong><p>可选声音由当前浏览器与系统提供。</p></div><select value={user.preferences.voiceUri} onChange={e=>updatePreference({voiceUri:e.target.value})} aria-label="设备声音"><option value="">自动选择中文声音</option>{voices.filter(v=>v.lang.startsWith("zh")||v.lang.startsWith("en")).slice(0,30).map(v=><option key={v.voiceURI} value={v.voiceURI}>{v.name} · {v.lang}</option>)}</select></div><div className="setting-row"><div><strong>播放速度</strong><p>找到舒服的阅读节奏。</p></div><select value={user.preferences.speed} onChange={e=>updatePreference({speed:Number(e.target.value)})} aria-label="播放速度">{[0.8,1,1.2,1.5,1.8].map(v=><option key={v} value={v}>{v} ×</option>)}</select></div><button className="secondary-btn" onClick={()=>articles[0]&&listen(articles[0],[articles[0]])}><Volume2 size={15}/>试听一条摘要</button></section>
             <section className="settings-panel"><div className="panel-title"><Sparkles size={19}/><h2>探索偏好</h2></div><div className="setting-row"><div><strong>自动试用新主题</strong><p>主动探索找到资料后，添加相关方向，14 天后到期。</p></div><button className={"switch "+(user.preferences.autoExplore?"on":"")} role="switch" aria-checked={user.preferences.autoExplore} aria-label="自动试用新主题" onClick={()=>updatePreference({autoExplore:!user.preferences.autoExplore})}><span/></button></div><div className="setting-row"><div><strong>管理关注主题</strong><p>查看、移除或保留你正在关注的方向。</p></div><button className="icon-btn" onClick={()=>changeView("topics")} aria-label="进入主题管理"><ArrowUpRight size={19}/></button></div></section>
           </div><div>

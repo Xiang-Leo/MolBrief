@@ -28,10 +28,10 @@ export const capabilities = () => ({
   codex: false,
 });
 export class AppError extends Error {
-  constructor(message: string, public status = 400) { super(message); }
+  constructor(message: string, public status = 400, public retryAfter?: number) { super(message); }
 }
 export function errorResponse(error: unknown) {
-  if (error instanceof AppError || error instanceof AuthError) return Response.json({ error: error.message }, { status: error.status });
+  if (error instanceof AppError || error instanceof AuthError) return Response.json({ error: error.message }, { status: error.status, headers:error instanceof AppError&&error.retryAfter?{"Retry-After":String(error.retryAfter)}:undefined });
   if (error instanceof z.ZodError) return Response.json({ error: "输入格式不正确，请检查后重试。" }, { status: 400 });
   console.error("MolBrief request failed", error instanceof Error ? error.name : "unknown");
   return Response.json({ error: "这次操作未完成，已有内容不会受影响。请稍后重试。" }, { status: 500 });
@@ -172,22 +172,28 @@ function plain(xml: string) {
   return xml.replace(/<[^>]*>/g," ").replace(/&amp;/g,"&").replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&quot;/g,'"').replace(/&#39;|&apos;/g,"'").replace(/&#(\d+);/g,(_,n)=>String.fromCharCode(Number(n))).replace(/\s+/g," ").trim();
 }
 async function remote(url:string, init:RequestInit={}, timeout=25000) {
-  const response=await fetch(url,{...init,signal:AbortSignal.timeout(timeout),redirect:"error"});
-  if(!response.ok) throw new AppError("外部服务暂未完成请求（"+response.status+"），请稍后重试。",502);
+  const timedOut=AbortSignal.timeout(timeout);
+  const response=await fetch(url,{...init,signal:init.signal?AbortSignal.any([init.signal,timedOut]):timedOut,redirect:"error"});
+  if(!response.ok) {
+    const value=response.headers.get("retry-after");
+    const seconds=value&&/^\d+$/.test(value)?Number(value):value?Math.ceil((Date.parse(value)-Date.now())/1000):0;
+    const retryAfter=Number.isFinite(seconds)&&seconds>0?Math.min(seconds,31536000):undefined;
+    throw new AppError("外部服务暂未完成请求（"+response.status+"），请稍后重试。",response.status===429?429:502,retryAfter);
+  }
   return response;
 }
-export async function pubmedSearch(query:string):Promise<Article[]> {
-  try { return await searchLiterature(query) as Article[]; }
+export async function pubmedSearch(query:string, options:{signal?:AbortSignal}={}):Promise<Article[]> {
+  try { return await searchLiterature(query,options) as Article[]; }
   catch(error) {
-    if(error instanceof LiteratureSearchError) throw new AppError(error.message,error.status);
+    if(error instanceof LiteratureSearchError) throw new AppError(error.message,error.status,error.retryAfter);
     throw new AppError("文献检索暂未完成，请稍后重试。",502);
   }
 }
-export async function webSearch(query:string):Promise<Article[]> {
+export async function webSearch(query:string, options:{signal?:AbortSignal}={}):Promise<Article[]> {
   const key=runtime().PARALLEL_API_KEY;
   if(!key) throw new AppError("联网发现需要先连接 Parallel。你现在可以使用 PubMed 论文搜索。",501);
   const data=await (await remote("https://api.parallel.ai/v1/search",{
-    method:"POST",headers:{"Content-Type":"application/json","x-api-key":key},
+    method:"POST",signal:options.signal,headers:{"Content-Type":"application/json","x-api-key":key},
     body:JSON.stringify({objective:"Find recent pharmaceutical, drug research, or AI drug discovery information about: "+query+". Prefer original company announcements, regulator documents and original research. Preserve original dates.",search_queries:[query],mode:"fast"}),
   })).json() as any;
   const out:Article[]=[];
@@ -203,14 +209,14 @@ export async function webSearch(query:string):Promise<Article[]> {
   }
   return out;
 }
-export async function summarize(article:Article):Promise<Article> {
+export async function summarize(article:Article, options:{signal?:AbortSignal}={}):Promise<Article> {
   const config=runtime();
   if(!(config.LLM_API_KEY&&config.LLM_BASE_URL&&config.LLM_MODEL)) throw new AppError("中文解读需要先连接摘要模型。原始摘要和来源链接仍可阅读。",501);
   const base=new URL(config.LLM_BASE_URL!);
   if(base.protocol!=="https:"||base.username||base.password||base.search||base.hash) throw new AppError("模型服务地址需为不含账号或查询参数的 HTTPS API 根路径。",500);
   const url=base.href.replace(/\/$/,"")+"/chat/completions";
   const response=await (await remote(url,{
-    method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+config.LLM_API_KEY},
+    method:"POST",signal:options.signal,headers:{"Content-Type":"application/json",Authorization:"Bearer "+config.LLM_API_KEY},
     body:JSON.stringify({model:config.LLM_MODEL,...buildSummaryRequest(article)}),
   },60000)).json() as any;
   try { return mergeModelSummary(article,response.choices?.[0]?.message?.content); }

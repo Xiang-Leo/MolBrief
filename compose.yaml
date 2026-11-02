@@ -23,5 +23,28 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
+  collector:
+    image: molbrief:0.2.0
+    command: ["node", "scripts/collection-worker.mjs"]
+    init: true
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      INGEST_API_TOKEN: ${INGEST_API_TOKEN:?Set INGEST_API_TOKEN in .env}
+      APP_ORIGIN: ${APP_ORIGIN:?Set APP_ORIGIN in .env}
+      COLLECTION_API_URL: http://app:3000/api/collection/tick
+      COLLECTION_TICK_INTERVAL_SECONDS: "60"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 128m
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
 volumes:
   molbrief_data:
