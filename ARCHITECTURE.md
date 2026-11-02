@@ -25,12 +25,13 @@ flowchart TD
     CORE --> DB[SQLite]
     CORE --> AUDIO[本地音频]
     CORE --> EXT[搜索 模型 配音服务]
-    TASK[后续定时任务或 Codex] -. 受限导入 .-> API
+    WORKER[服务器 collector] -->|到期检查与执行| API
+    TASK[后续 Codex] -. 受限导入 .-> API
 ```
 
 `app/molbrief.tsx` 负责阅读交互，`lib/molbrief-server.ts` 组织检索、摘要、主题和配音，`lib/local-storage.ts` 与 `lib/storage-core.mjs` 隔离数据库与文件访问。浏览器不持有已保存的服务密钥；网页配置只在用户输入时提交新密钥，保存后不回显。日常内容写入与应用源码发布分离。
 
-当前流程：关键词 → NCBI 或明确标注的 Europe PMC MED 题录备用 / Parallel 候选 → 阅读、收藏；配置模型后可生成分段中文解读。已收录资料中的人工实体与事实汇总到 `/knowledge`，可继续通过表单补充来源。页面刷新仅重读存量。图中的定时任务与 Codex 是后续接入点，交付时不代表已经启动。
+当前流程：关键词 → NCBI 或明确标注的 Europe PMC MED 题录备用 / Parallel 候选 → 阅读、收藏；配置模型后可生成分段中文解读。已收录资料中的人工实体与事实汇总到 `/knowledge`，可继续通过表单补充来源。页面刷新仅重读存量；collector 按计划新增资料。图中的 Codex 仍为后续接入点。
 
 ## 身份与持久化
 
@@ -51,6 +52,8 @@ flowchart TD
 | `audio_assets` | 内容 / 音色哈希 ID、本地音频键、生成时间 |
 | `service_settings` | 单所有者的加密配置与绑定当前配置指纹的验证记录；响应不回传密钥 |
 | `runs` | 任务 ID、类型、状态、启动时间、详情；当前主要用于配音并发锁 |
+| `collection_state / collection_runs` | 每日计划、队列、游标、心跳与租约；逐轮安全日志及完成数量 |
+| `collection_usage / collection_cache / collection_backoff` | 北京日界付费次数、查询指纹缓存与来源退避时间 |
 
 Article 包含 `title`、可选 `originalTitle`、`category`、`publishedAt`、`url`、`source`、`type`、`summary`、`keyPoints`、`limitations`、`topics`、`readingBasis`、`group`、`collectedAt` 与可选 `coverSource`。可选的 `deepDive` 保存六类深读，`entities` 保存药物 / 靶点 / 公司 / 合作与逐条来源事实；`sourceText` 是原始摘录，`sourceReview` 记录核对范围和时间。`publishedAt` 与 `collectedAt` 含义不同；无法确认精确发表日期时保留 `null`。
 
@@ -67,6 +70,8 @@ URL 去除已知追踪参数与片段后生成稳定 ID，相同 URL 更新既�
 | GET `/feed` | 已收录内容 | 会话或服务令牌 |
 | GET `/knowledge` | 带来源事实与时间线的专题目录 | 会话 |
 | GET / POST `/settings` | 读取非秘密配置、保存与显式验证服务 | 会话，同源写入 |
+| GET / POST `/collection` | 采集状态、计划和手动入队 | 会话，同源写入 |
+| POST `/collection/tick` | 唤醒到期或排队工作 | 仅服务令牌，同源 Origin |
 | POST `/article` | 手工资料与实体事实补充 | 会话，同源写入 |
 | GET `/state` | 收藏、已读、主题、偏好与配置状态 | 会话 |
 | GET `/update-guide` | 后台更新规则与关注方向 | 会话或服务令牌 |
@@ -86,4 +91,12 @@ URL 去除已知追踪参数与片段后生成稳定 ID，相同 URL 更新既�
 
 文献搜索优先使用 NCBI 题录与摘要接口。当前 ECS 出口被 NCBI 限制时，使用官方 Europe PMC 的 MED 记录作为备用，标明提供方且保留真实 PMID 的 PubMed 链接；未知精确日期保持 `null`，尊重上游 Retry-After，不循环重试受限接口。Parallel 当前读取搜索摘录；兼容模型接口按材料输出中文结构化解读；MiniMax 通过预先配置的音色生成 MP3。配音按文本、音色和模型生成缓存键，并使用数据库锁降低并发重复生成风险。配置项存在只表示已配置，真实可用性需调用验证。
 
-全文采集、来源快照、定时任务、调用配额与事件合并应在这些边界上逐步增加。先保留统一 Article 数据结构，不提前拆出多个服务。PWA 当前缓存图标和断网提示，不缓存完整私人阅读库；设备朗读与浏览器后台播放能力也不等同于完整音频 App。
+全文采集、来源快照与事件合并应在这些边界上逐步增加。保留统一 Article 数据结构。PWA 当前缓存图标和断网提示，不缓存完整私人阅读库；设备朗读与浏览器后台播放能力也不等同于完整音频 App。
+
+## 自动采集
+
+`collector` 与 `app` 使用同一镜像中的独立 Node 进程。采集进程不挂载数据库、不开端口，也不持有模型或搜索 API 密钥；仅通过固定内部地址向 `POST /api/collection/tick` 发送后台令牌。应用检查每日北京时间计划和手动队列后执行工作，状态、预算、缓存、游标和租约均存 SQLite。新迁移为 `0002_auto_collection.sql`。
+
+所有者通过 `GET / POST /api/collection` 查看记录、修改设置或排队；服务令牌不能管理这些设置，普通会话不能执行 tick。检索直接复用现有来源与模型适配，未配置或未勾选的付费能力不会调用。付费次数在调用前预留，失败也计入每日上限；并发运行使用数据库租约隔离，异常中断可以恢复。
+
+已有 URL 在模型调用前去重，写入使用 `INSERT OR IGNORE`，不覆盖人工扩写、来源事实、收藏或已读。新条目保留原始摘要 / 搜索摘录的阅读范围；没有生成中文或提取全文时不会标为已完成。首页轮询采集状态，发现新完成记录后读取更新内容。它是关注关键词采集，不是完整事件合并或自主专题研究。

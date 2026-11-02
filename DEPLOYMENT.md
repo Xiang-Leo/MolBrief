@@ -4,6 +4,8 @@
 
 ## 本轮升级（2026-11-02 至 11-03）
 
+本轮另增加 `collector` 自动采集进程和 `0002_auto_collection.sql`。用户确认每天北京时间 08:00；默认免费论文源，Parallel 和中文模型需要配置并在自动采集设置勾选。部署时使用 `docker compose up -d --build` 更新应用与采集进程。配置和执行记录在 `/settings#collection-settings`；首页显示下次时间与上次新增数。实际验收结果见 `VERIFICATION.md`。
+
 关键词入口为 `/topics`，专题目录为 `/knowledge`，服务配置为 `/settings`。基础域名、账号和持久卷沿用既有配置。新迁移新增加密服务设置，保留原业务表。
 
 首次功能升级前备份：`/app/var/backups/molbrief-2026-11-02T14-08-53-005Z-1f67e47d`；旧镜像额外保留为 `molbrief:pre-knowledge-20261102`。最终数据保护更新前另有 `/app/var/backups/molbrief-2026-11-02T22-38-39-372Z-d8c99829`。最终重启验收后备份为 `/app/var/backups/molbrief-2026-11-02T22-44-04-858Z-18a72f31`，同时复制到宿主与本机私有备份目录。升级后的本机、真实服务器与外部服务检查以 `VERIFICATION.md` 的本轮记录为准。
@@ -163,7 +165,7 @@ docker compose up -d --force-recreate app
 
 MiniMax默认模型名称为`speech-2.8-turbo`，音色ID需先在该服务创建或选择。本版本未实现声音克隆上传界面。没有配置API时，阅读、收藏和设备朗读可使用；全网检索、模型摘要和云端配音显示待连接。
 
-Codex执行网关和定时更新尚未实现/启用；不要把Docker启动等同于自动采集已经开始。
+Codex 执行网关尚未实现。定时采集由独立 collector 进程执行；查看网页采集设置的在线状态、下次时间和运行记录，不能只以 Docker 启动判断实际采集成功。
 
 ## 7. 导入当前文章快照
 
@@ -239,7 +241,7 @@ git rev-parse origin/main
 git status --short
 ```
 
-本轮未修改业务逻辑，新增 Nginx 模板并补充 `.gitignore`，排除 SQLite、密钥和本机凭据文件；既有规则同时排除 `.env`、运行数据、备份、`node_modules` 和构建产物。首推前检查 58 个暂存文件，未发现真实环境变量值、登录密码、私钥或运行数据；镜像中也已核对不含 `.env`。
+首次 Git 同步当时未修改业务逻辑，新增 Nginx 模板并补充 `.gitignore`，排除 SQLite、密钥和本机凭据文件；既有规则同时排除 `.env`、运行数据、备份、`node_modules` 和构建产物。首次推送前检查 58 个暂存文件，未发现真实环境变量值、登录密码、私钥或运行数据；镜像中也已核对不含 `.env`。
 
 后续在本地改代码并推送，服务器在现有目录执行 `git pull --ff-only` 和 `docker compose up -d --build`。更新前按第 8 节备份，保留现有 `.env` 与数据卷，不要重新运行账号初始化。全新服务器才需要 clone 和首次配置。
 
@@ -258,6 +260,19 @@ npm run start
 ```
 
 Next.js会加载项目根目录.env；npm run start提供生产服务，开发时才用npm run dev。正式长期运行应配置systemd或你已有的进程管理器，设置正确WorkingDirectory、启动用户和重启策略；前面保留反向代理。不要把开发服务器作为公开部署入口。
+
+### 自动采集进程
+
+Docker Compose 会同时运行 `app` 与 `collector`。采集进程每分钟检查到期任务，运行时串行等待结果；关闭浏览器和本机电脑不影响服务器任务。初始部署可在网站点击“立即采集”，不必等到下次 08:00。查询和模型出错会保留已有列表，在记录中显示安全错误；有限延迟重试与缓存用于限制重复请求。
+
+```bash
+docker compose ps
+docker compose logs --tail=30 collector
+```
+
+不要把付费 API 密钥加入采集进程环境；只给它后台令牌、站点 Origin 和固定内网 tick 地址。数据库及加密配置仍由 `app` 管理。非 Docker 部署可在同一主机用进程管理器独立运行 `node --env-file=.env.collector scripts/collection-worker.mjs`；该私有文件只保存 `INGEST_API_TOKEN`、`APP_ORIGIN` 和 `COLLECTION_API_URL=http://127.0.0.1:3000/api/collection/tick`，不要加载完整的应用 `.env`。网页停机时进程按周期重试；恢复后到期工作最多补一轮，不会逐日重放积压。
+
+“定时已开启”与“服务在线”分别显示。新增配置或修改预算后仍须点击保存；暂停定时不取消已开始的一轮。自动采集只增加阅读库，不自动收藏。数据恢复同时保留采集计划、运行记录、限额和队列。
 
 ## 11. 最少验收清单
 
