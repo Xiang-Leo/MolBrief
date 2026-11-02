@@ -14,3 +14,14 @@ export function mergeArticleEvidence(existing: Article | undefined, incoming: Ar
   }
   return { ...existing, ...incoming, publishedAt: incoming.publishedAt ?? existing.publishedAt, keyPoints: incoming.keyPoints.length ? incoming.keyPoints : existing.keyPoints, entities: [...entities.values()] };
 }
+
+/** Model-generated prose may change; the latest stored source material must not. */
+export function applyGeneratedSummary(current: Article | undefined, generated: Article): Article {
+  if (!current) return generated;
+  return {
+    ...current, title: generated.title, originalTitle: current.originalTitle ?? generated.originalTitle,
+    summary: generated.summary, keyPoints: generated.keyPoints, limitations: generated.limitations,
+    topics: generated.topics, deepDive: generated.deepDive ?? current.deepDive,
+    entities: mergeArticleEvidence(current, generated).entities,
+  };
+}

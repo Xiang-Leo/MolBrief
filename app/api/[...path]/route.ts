@@ -8,7 +8,7 @@ import {
 } from "@/lib/molbrief-server";
 import type { Article } from "@/lib/molbrief-types";
 import { buildKnowledgeDirectory } from "@/lib/knowledge-core";
-import { mergeArticleEvidence } from "@/lib/article-merge";
+import { applyGeneratedSummary, mergeArticleEvidence } from "@/lib/article-merge";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -112,16 +112,23 @@ export async function POST(request:Request) {
     }
     if(path==="collect") {
       const item=articleSchema.parse(input.article);
-      await ingest([item]);
-      const id="art-"+(await hash(canonicalUrl(item.url))).slice(0,16);
-      return Response.json(await updateReading(id,"save",true));
+      const url=canonicalUrl(item.url);
+      if(!(await getArticles()).some(a=>a.url===url))await ingest([item]);
+      const article=(await getArticles()).find(a=>a.url===url);
+      if(!article)throw new AppError("资料保存后未能读回，请刷新重试。",500);
+      return Response.json({...await updateReading(article.id,"save",true),article});
     }
     if(path==="summarize") {
       const item=articleSchema.parse(input.article);
       const url=canonicalUrl(item.url);
       const id="art-"+(await hash(url)).slice(0,16);
-      const article=await summarize({...item,url,id,collectedAt:new Date().toISOString()} as Article);
-      await ingest([article]);
+      const existing=(await getArticles()).find(a=>a.url===url);
+      const candidate={...item,url,id,collectedAt:new Date().toISOString()} as Article;
+      const inputArticle=existing?mergeArticleEvidence(candidate,existing):candidate;
+      const generated=await summarize(inputArticle);
+      const latest=(await getArticles()).find(a=>a.url===url);
+      await ingest([applyGeneratedSummary(latest,generated)]);
+      const article=(await getArticles()).find(a=>a.url===url);
       return Response.json({article});
     }
     if(path==="audio") {

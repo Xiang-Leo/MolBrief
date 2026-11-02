@@ -42,7 +42,7 @@ type ApiResponses = {
   feed: { articles: Article[] };
   state: UserState;
   reading: UserState;
-  collect: UserState;
+  collect: UserState & { article: Article };
   topics: UserState;
   preferences: UserState;
   search: { articles: Article[]; source: "pubmed" | "web" };
@@ -195,7 +195,7 @@ export default function MolBrief({signedIn,displayName,initialView="today",initi
     setBusyId(a.id);
     try{
       if(!articles.some(x=>x.id===a.id)) {
-        setUser(await api("collect",{article:a}));setArticles(prev=>[a,...prev.filter(x=>x.id!==a.id)]);
+        const collected=await api("collect",{article:a});setUser(collected);setArticles(prev=>[collected.article,...prev.filter(x=>x.id!==collected.article.id)]);
         notify("已收录到你的收藏。");
       } else {
         const value=!user.saved.includes(a.id);

@@ -121,3 +121,22 @@ test("directory lookup and search work with reviewed aliases without adding fact
   assert.deepEqual(searchKnowledgeEntities(directory, "abc-123", "target"), []);
   assert.equal(knowledgeEntityId("drug", " ABC-123 "), knowledgeEntityId("drug", "abc-123"));
 });
+
+test("previously shared links survive a later reviewed alias becoming the preferred name", () => {
+  const first = article("original-company", { entities: [entity("company", "英矽智能", { aliases: ["Insilico Medicine"] })] });
+  const previous = buildKnowledgeDirectory([first]).companies[0];
+  const directory = buildKnowledgeDirectory([
+    first,
+    article("later-company", { entities: [entity("company", "Insilico Medicine")] }),
+  ]);
+  const current = directory.companies[0];
+  assert.equal(directory.companies.length, 1);
+  assert.notEqual(current.id, previous.id);
+  assert.equal(current.name, "Insilico Medicine");
+  assert.equal(findKnowledgeEntity(directory, previous.id), current);
+  assert.equal(findKnowledgeEntity(directory, current.id), current);
+  assert.equal(findKnowledgeEntity(directory, knowledgeEntityId("company", "insilico medicine")), current);
+  assert.equal(findKnowledgeEntity(directory, knowledgeEntityId("drug", "英矽智能")), null);
+  assert.equal(current.articles.length, 2);
+  assert.deepEqual(current.facts, []);
+});

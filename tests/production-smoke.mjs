@@ -211,6 +211,22 @@ try {
   assert.ok(curatedDrug.sourceUrls.includes(article.url));
   pass('knowledge API aggregates the supplied curated entity and its sourced facts');
 
+  const staleArticle={...article,summary:'A stale search-result abstract.',keyPoints:[]};
+  for(const field of ['entities','deepDive','sourceText','sourceReview'])delete staleArticle[field];
+  const recollected=await ownerJson('/api/collect',{article:staleArticle});
+  assert.equal(recollected.article.summary,savedArticle.article.summary);
+  assert.equal(recollected.article.deepDive.background,richArticle.deepDive.background);
+  assert.ok(recollected.article.entities.some(e=>e.name==='Smoke curated drug'));
+  assert.ok(recollected.saved.includes(article.id));
+  pass('collecting a stale search result returns the stored article without overwriting reviewed evidence');
+
+  response=await request('/api/ingest',{service:true,body:{articles:['A','B'].map(name=>({...staleArticle,entities:[{type:'company',name:'Smoke appended company '+name,sourceUrl:article.url,provenance:'curated',facts:[]}]}))}});
+  assert.equal(response.status,200);
+  const supplemented=(await ownerJson('/api/feed')).articles.find(item=>item.url===article.url);
+  for(const name of ['Smoke curated drug','Smoke appended company A','Smoke appended company B'])assert.ok(supplemented.entities.some(e=>e.name===name));
+  assert.equal(supplemented.deepDive.background,richArticle.deepDive.background);
+  pass('successive updates to one URL in the same ingest batch retain earlier and newly supplied evidence');
+
   response = await request('/manifest.webmanifest'); assert.equal(response.status, 200);
   const manifest = await response.json(); assert.ok(manifest.icons.some(icon => icon.sizes === '192x192'));
   assert.equal((await request('/icon-192.png')).status, 200);
@@ -224,6 +240,35 @@ try {
     assert.ok((await response.text()).includes(marker), route + ' expected page content');
   }
   pass('direct keyword, configuration, knowledge and entity pages render their intended sections');
+
+  const historyDatabase = new DatabaseSync(path.join(environment.DATA_DIR, 'molbrief.sqlite'));
+  try {
+    const insert = historyDatabase.prepare('INSERT INTO articles(id,canonical_url,payload,collected_at) VALUES(?,?,?,?)');
+    historyDatabase.exec('BEGIN');
+    try {
+      for (let index = 0; index < 205; index++) {
+        const id = 'smoke-history-' + index, url = 'https://history.example.invalid/' + index;
+        const collectedAt = new Date(Date.UTC(2000, 0, 1, 0, 0, index)).toISOString();
+        const historicalArticle = {
+          ...article, id, url, title: 'Disposable historical fixture ' + index,
+          publishedAt: null, collectedAt, topics: [],
+          entities: index === 0 ? [{ type: 'target', name: 'Smoke earliest historical target', sourceUrl: url, provenance: 'curated', facts: [] }] : [],
+        };
+        insert.run(id, url, JSON.stringify(historicalArticle), collectedAt);
+      }
+      historyDatabase.exec('COMMIT');
+    } catch (error) { historyDatabase.exec('ROLLBACK'); throw error; }
+    const completeFeed = await ownerJson('/api/feed');
+    assert.equal(completeFeed.articles.length, 213);
+    assert.ok(completeFeed.articles.some(item => item.id === 'smoke-history-0'));
+    const completeDirectory = await ownerJson('/api/knowledge');
+    assert.ok(completeDirectory.targets.some(item => item.name === 'Smoke earliest historical target'));
+    pass('older unbookmarked evidence remains in the library and knowledge directory beyond 200 articles');
+  } finally {
+    historyDatabase.prepare("DELETE FROM articles WHERE id GLOB 'smoke-history-*'").run();
+    historyDatabase.close();
+  }
+  assert.equal((await ownerJson('/api/feed')).articles.length, 8);
 
   await stop(); await start();
   state = await ownerJson('/api/state');

@@ -178,7 +178,12 @@ export function buildKnowledgeDirectory(input: readonly KnowledgeSourceArticle[]
 }
 
 export function findKnowledgeEntity(directory: KnowledgeDirectory, id: string): KnowledgeEntity | null {
-  return [...directory.drugs, ...directory.targets, ...directory.companies, ...directory.deals].find((entity) => entity.id === id) || null;
+  const entities = [...directory.drugs, ...directory.targets, ...directory.companies, ...directory.deals];
+  // A new record may use a reviewed alias as its main name and change the
+  // preferred display name. Previously shared links still identify that entity.
+  return entities.find((entity) => entity.id === id)
+    || entities.find((entity) => [entity.name, ...entity.aliases].some((name) => knowledgeEntityId(entity.type, name) === id))
+    || null;
 }
 
 export function searchKnowledgeEntities(directory: KnowledgeDirectory, query: string, type?: EntityType): KnowledgeEntity[] {

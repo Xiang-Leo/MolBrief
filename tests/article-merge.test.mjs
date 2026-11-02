@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { mergeArticleEvidence } from '../lib/article-merge.ts';
+import { applyGeneratedSummary, mergeArticleEvidence } from '../lib/article-merge.ts';
 
 test('adding records to an existing URL preserves previous entities, source scope and detailed reading', async () => {
   const articles=JSON.parse(await readFile(new URL('../data/seed.json',import.meta.url),'utf8'));
@@ -25,4 +25,17 @@ test('repeated supplemental evidence does not multiply already collected facts',
   const twice=mergeArticleEvidence(once,incoming);
   assert.equal(twice.entities.length,once.entities.length);
   assert.deepEqual(twice.entities,once.entities);
+});
+
+test('generated prose cannot replace source material or facts updated while a model request was running', async () => {
+  const articles=JSON.parse(await readFile(new URL('../data/seed.json',import.meta.url),'utf8'));
+  const earlier=articles.find(a=>a.entities?.some(e=>e.facts?.length));
+  const latest={...earlier,sourceText:'The newest supplied source excerpt.',readingBasis:'Latest reviewed source scope',entities:[...earlier.entities,{type:'target',name:'Later reviewed target',sourceUrl:earlier.url,provenance:'curated',facts:[]}]};
+  const generated={...earlier,title:'Expanded title',summary:'Expanded source-bound prose.',sourceText:'An outdated source excerpt.',readingBasis:'Stale source scope'};
+  const merged=applyGeneratedSummary(latest,generated);
+  assert.equal(merged.summary,generated.summary);
+  assert.equal(merged.sourceText,latest.sourceText);
+  assert.equal(merged.readingBasis,latest.readingBasis);
+  assert.ok(merged.entities.some(e=>e.name==='Later reviewed target'));
+  assert.deepEqual(merged.entities[0].facts,earlier.entities[0].facts);
 });

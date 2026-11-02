@@ -6,6 +6,7 @@ import { articleSchema as editorialArticleSchema, buildSummaryRequest, mergeMode
 import { searchLiterature, LiteratureSearchError } from "./literature-search-core.mjs";
 import seedData from "@/data/seed.json";
 import { Article, DEFAULT_PREFERENCES, Preferences, STARTER_TOPICS, Topic } from "./molbrief-types";
+import { mergeArticleEvidence } from "./article-merge";
 
 type Runtime = NodeJS.ProcessEnv & {
   PARALLEL_API_KEY?: string;
@@ -72,11 +73,10 @@ export async function hash(value: string) {
     .map((x) => x.toString(16).padStart(2, "0")).join("");
 }
 export const articleSchema = editorialArticleSchema;
-export async function getArticles({ userScoped = true }: {userScoped?:boolean} = {}): Promise<Article[]> {
-  const user = userScoped ? await getCurrentUser() : null;
-  const query = user
-    ? db().prepare("SELECT payload FROM articles WHERE id IN (SELECT id FROM articles ORDER BY collected_at DESC LIMIT 200) OR id IN (SELECT article_id FROM reading_state WHERE user_id=? AND saved=1) ORDER BY collected_at DESC").bind(user.userId)
-    : db().prepare("SELECT payload FROM articles ORDER BY collected_at DESC LIMIT 200");
+export async function getArticles(_options: {userScoped?:boolean} = {}): Promise<Article[]> {
+  // The single-owner library is cumulative: older unsaved evidence must remain
+  // available to the knowledge directory as well as to bookmarked articles.
+  const query = db().prepare("SELECT payload FROM articles ORDER BY collected_at DESC");
   const rows = await query.all<{ payload: string }>();
   const combined = new Map<string, Article>();
   for (const a of seedData as Article[]) combined.set(a.url, a);
@@ -89,10 +89,20 @@ export async function ingest(values: unknown[]) {
   const now = new Date().toISOString();
   const parsed = values.map((x) => articleSchema.parse(x));
   const statements = [];
+  const pending = new Map<string, Article>();
   for (const item of parsed) {
     const url = canonicalUrl(item.url);
     const id = "art-" + (await hash(url)).slice(0, 16);
-    const a: Article = { ...item, id, url, collectedAt: now };
+    let existing = pending.get(url);
+    if (!existing) {
+      const row = db().prepare("SELECT payload FROM articles WHERE canonical_url=?").bind(url).first<{payload:string}>();
+      if (row) {
+        try { existing = articleSchema.parse(JSON.parse(row.payload)) as Article; }
+        catch { throw new AppError("已有资料格式需要检查，本次更新未覆盖原记录。",409); }
+      }
+    }
+    const a: Article = { ...mergeArticleEvidence(existing,{ ...item, id, url, collectedAt: now } as Article), id, url, collectedAt: now };
+    pending.set(url,a);
     statements.push(db().prepare("INSERT INTO articles (id, canonical_url, payload, collected_at) VALUES (?, ?, ?, ?) ON CONFLICT(canonical_url) DO UPDATE SET payload=excluded.payload, collected_at=excluded.collected_at")
       .bind(id, url, JSON.stringify(a), now));
   }
