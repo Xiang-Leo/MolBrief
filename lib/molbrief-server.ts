@@ -3,6 +3,7 @@ import { AuthError, assertSameOrigin, getCurrentUser } from "./auth";
 import { audioObjectExists, getDatabase, writeAudioObject } from "./local-storage";
 import { getServiceRuntime } from "./service-config";
 import { articleSchema as editorialArticleSchema, buildSummaryRequest, mergeModelSummary, SummaryOutputError } from "./editorial-schema";
+import { searchLiterature, LiteratureSearchError } from "./literature-search-core.mjs";
 import seedData from "@/data/seed.json";
 import { Article, DEFAULT_PREFERENCES, Preferences, STARTER_TOPICS, Topic } from "./molbrief-types";
 
@@ -166,36 +167,11 @@ async function remote(url:string, init:RequestInit={}, timeout=25000) {
   return response;
 }
 export async function pubmedSearch(query:string):Promise<Article[]> {
-  const root="https://eutils.ncbi.nlm.nih.gov/entrez/eutils/";
-  const search=await (await remote(root+"esearch.fcgi?db=pubmed&retmode=json&retmax=8&sort=pub+date&term="+encodeURIComponent(query))).json() as any;
-  const ids=search.esearchresult?.idlist as string[]|undefined;
-  if(!ids?.length) return [];
-  const xml=await (await remote(root+"efetch.fcgi?db=pubmed&retmode=xml&id="+ids.join(","))).text();
-  const blocks=xml.match(/<PubmedArticle>[\s\S]*?<\/PubmedArticle>/g)||[];
-  const out:Article[]=[];
-  for(const block of blocks) {
-    const pmid=block.match(/<PMID[^>]*>(\d+)<\/PMID>/)?.[1];
-    const title=plain(block.match(/<ArticleTitle>([\s\S]*?)<\/ArticleTitle>/)?.[1]||"");
-    if(!pmid||!title) continue;
-    const abstract=[...block.matchAll(/<AbstractText[^>]*>([\s\S]*?)<\/AbstractText>/g)].map((m)=>plain(m[1])).join(" ");
-    const journal=plain(block.match(/<Title>([\s\S]*?)<\/Title>/)?.[1]||"PubMed");
-    const pub=block.match(/<PubDate>([\s\S]*?)<\/PubDate>/)?.[1]||"";
-    const year=pub.match(/<Year>(\d{4})<\/Year>/)?.[1];
-    const month=pub.match(/<Month>([^<]+)<\/Month>/)?.[1];
-    const day=pub.match(/<Day>(\d+)<\/Day>/)?.[1];
-    const months:Record<string,string>={Jan:"01",Feb:"02",Mar:"03",Apr:"04",May:"05",Jun:"06",Jul:"07",Aug:"08",Sep:"09",Oct:"10",Nov:"11",Dec:"12"};
-    const m=month?(months[month]||(/^\d+$/.test(month)?month.padStart(2,"0"):null)):null;
-    const date=year&&m&&day?year+"-"+m+"-"+day.padStart(2,"0"):null;
-    const url="https://pubmed.ncbi.nlm.nih.gov/"+pmid+"/";
-    out.push({
-      id:"art-"+(await hash(url)).slice(0,16),title,originalTitle:title,category:"研究",publishedAt:date,
-      url,source:journal,type:"论文记录",summary:abstract||"本记录未提供摘要，请打开 PubMed 查看原始信息。",
-      keyPoints:[],limitations:"这是检索得到的原始摘要，尚未进行中文解读和全文核对。",
-      topics:[query.slice(0,60)],readingBasis:abstract?"PubMed 原始摘要":"PubMed 题录",group:"检索结果",
-      collectedAt:new Date().toISOString(),coverSource:null,
-    });
+  try { return await searchLiterature(query) as Article[]; }
+  catch(error) {
+    if(error instanceof LiteratureSearchError) throw new AppError(error.message,error.status);
+    throw new AppError("文献检索暂未完成，请稍后重试。",502);
   }
-  return out;
 }
 export async function webSearch(query:string):Promise<Article[]> {
   const key=runtime().PARALLEL_API_KEY;
