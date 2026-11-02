@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, cp, appendFile, rm, readFile, stat, symlink } from "node:fs/promises";
+import { mkdtemp, mkdir, cp, appendFile, rm, readFile, readdir, stat, symlink } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -17,12 +17,13 @@ async function fixture(t) {
 test("fresh migrations apply once and persisted articles survive reopening",async t=>{
   const options=await fixture(t);
   let database=new LocalDatabase(options);
-  assert.equal(database.appliedMigrations.length,1);
+  const migrationCount=(await readdir(options.migrationsDir)).filter(name=>/^\d{4}_[a-zA-Z0-9_-]+\.sql$/.test(name)).length;
+  assert.equal(database.appliedMigrations.length,migrationCount);
   database.prepare("INSERT INTO articles(id,canonical_url,payload,collected_at) VALUES(?,?,?,?)").bind("saved-article","https://example.org/paper","{}","2026-10-27").run();
   database.close();
   database=new LocalDatabase(options);
   assert.equal(database.appliedMigrations.length,0);
-  assert.equal(database.prepare("SELECT count(*) AS n FROM __molbrief_migrations").first().n,1);
+  assert.equal(database.prepare("SELECT count(*) AS n FROM __molbrief_migrations").first().n,migrationCount);
   assert.equal(database.prepare("SELECT canonical_url FROM articles WHERE id=?").bind("saved-article").first().canonical_url,"https://example.org/paper");
   database.close();
 });

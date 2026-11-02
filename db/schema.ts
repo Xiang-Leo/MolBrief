@@ -38,3 +38,8 @@ export const audioAssets = sqliteTable("audio_assets", {
   objectKey: text("object_key").notNull(),
   createdAt: text("created_at").notNull(),
 });
+export const serviceSettings = sqliteTable("service_settings", {
+  userId: text("user_id").primaryKey(),
+  encryptedPayload: text("encrypted_payload").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});

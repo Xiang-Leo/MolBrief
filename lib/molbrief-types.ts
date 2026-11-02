@@ -1,5 +1,6 @@
 export type Category = "产业" | "临床" | "研究" | "工具";
-export type Article = {
+import type { ArticleKnowledge } from "./knowledge-types";
+export type Article = ArticleKnowledge & {
   id: string;
   title: string;
   originalTitle?: string;
@@ -16,6 +17,8 @@ export type Article = {
   group: string;
   collectedAt: string;
   coverSource?: string | null;
+  sourceText?: string;
+  sourceReview?: { status: "verified" | "unavailable"; checkedAt: string; note: string };
 };
 export type Topic = {
   id: string; name: string; query: string;

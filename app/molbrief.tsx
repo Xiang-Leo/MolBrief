@@ -9,16 +9,22 @@ import {
   ShieldCheck, SlidersHorizontal, Sparkles, Tag, Trash2, Volume2, X,
 } from "lucide-react";
 import seedData from "@/data/seed.json";
+import ServiceSettingsPanel from "./service-settings";
+import KnowledgePanel from "./knowledge-panel";
+import { buildKnowledgeDirectory, ENTITY_TYPE_LABELS } from "@/lib/knowledge-core";
+import type { ArticleEntity } from "@/lib/knowledge-types";
 import {
   Article, Category, DEFAULT_PREFERENCES, Preferences, STARTER_TOPICS, Topic, UserState,
 } from "@/lib/molbrief-types";
 
-type View = "today" | "discover" | "saved" | "topics" | "settings";
+export type View = "today" | "discover" | "saved" | "topics" | "settings" | "knowledge";
+const viewPaths: Record<View, string> = { today: "/", discover: "/discover", saved: "/saved", topics: "/topics", settings: "/settings", knowledge: "/knowledge" };
 const categories=["全部","产业","研究","工具","临床"];
 const categoryNames:Record<string,string>={全部:"全部内容",产业:"产业动态",研究:"研究论文",工具:"AI 工具",临床:"临床进展"};
 const navItems=[
   {view:"today" as View,label:"今日精选",icon:BookOpen},
   {view:"discover" as View,label:"探索发现",icon:Compass},
+  {view:"knowledge" as View,label:"药物与 BD 知识库",icon:FlaskConical},
   {view:"saved" as View,label:"我的收藏",icon:Bookmark},
 ];
 const topicSuggestions=[
@@ -30,7 +36,7 @@ const topicSuggestions=[
   {name:"人源化与可开发性",query:"nanobody humanization developability",anchor:"VHH",description:"把设计候选与开发条件联系起来。"},
 ];
 const formatDate=(date:string|null)=>date?date.replace(/-/g,"."): "日期未提供";
-const readMinutes=(a:Article)=>Math.max(1,Math.ceil((a.summary.length+a.keyPoints.join("").length)/450));
+const readMinutes=(a:Article)=>Math.max(1,Math.ceil((a.summary.length+a.keyPoints.join("").length+JSON.stringify(a.deepDive||{}).length)/450));
 const speechText=(a:Article)=>a.title+"。"+a.summary+"。"+a.keyPoints.join("。")+"。阅读提示："+a.limitations;
 type ApiResponses = {
   feed: { articles: Article[] };
@@ -42,6 +48,7 @@ type ApiResponses = {
   search: { articles: Article[]; source: "pubmed" | "web" };
   summarize: { article: Article };
   audio: { id: string; cached: boolean };
+  article: { article: Article };
 };
 async function api<P extends keyof ApiResponses>(path:P,body?:unknown):Promise<ApiResponses[P]> {
   const response=await fetch("/api/"+path,body?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}:{cache:"no-store"});
@@ -70,8 +77,8 @@ function TopicArt({kind="研究",large=false}:{kind?:string,large?:boolean}) {
 function Brand({small=false}:{small?:boolean}) {
   return <div className={"brand"+(small?" small":"")}><img src="/favicon.svg" alt="" width="38" height="38"/><div><strong>研览<span>MolBrief</span></strong>{!small&&<p>你的制药与研究情报站</p>}</div></div>;
 }
-export default function MolBrief({signedIn,displayName}:{signedIn:boolean,displayName:string}) {
-  const [view,setView]=useState<View>("today");
+export default function MolBrief({signedIn,displayName,initialView="today",initialEntityId}:{signedIn:boolean,displayName:string,initialView?:View,initialEntityId?:string}) {
+  const [view,setView]=useState<View>(initialView);
   const [articles,setArticles]=useState<Article[]>(seedData as Article[]);
   const [user,setUser]=useState<UserState>({
     signedIn,displayName,saved:[],read:[],topics:[],
@@ -92,6 +99,12 @@ export default function MolBrief({signedIn,displayName}:{signedIn:boolean,displa
   const [configModal,setConfigModal]=useState<string|null>(null);
   const [helpOpen,setHelpOpen]=useState(false);
   const [topicName,setTopicName]=useState("");
+  const [topicQuery,setTopicQuery]=useState("");
+  const [topicError,setTopicError]=useState("");
+  const [topicNotice,setTopicNotice]=useState("");
+  const [editingTopic,setEditingTopic]=useState<Topic|null>(null);
+  const [editingQuery,setEditingQuery]=useState("");
+  const [serviceFocus,setServiceFocus]=useState<string|null>(null);
   const [topicBusy,setTopicBusy]=useState(false);
   const [busyId,setBusyId]=useState<string|null>(null);
   const [hideRead,setHideRead]=useState(false);
@@ -145,7 +158,7 @@ export default function MolBrief({signedIn,displayName}:{signedIn:boolean,displa
   const filtered=useMemo(()=>articles.filter(a=>
     (category==="全部"||a.category===category)&&
     (!hideRead||!user.read.includes(a.id))&&
-    (!localQuery||[a.title,a.summary,...a.topics].join(" ").toLowerCase().includes(localQuery.toLowerCase()))&&
+    (!localQuery||[a.title,a.summary,...a.topics,...(a.entities||[]).flatMap(e=>[e.name,...e.aliases||[]])].join(" ").toLowerCase().includes(localQuery.toLowerCase()))&&
     (view!=="saved"||user.saved.includes(a.id))
   ),[articles,category,hideRead,user.read,user.saved,localQuery,view]);
   const activeTopics=user.topics.length?user.topics:(!user.signedIn?STARTER_TOPICS.map((t,i)=>({...t,id:"preview-"+i,kind:"core" as const,reason:"初始关注",createdAt:"",expiresAt:null})):[]);
@@ -156,7 +169,13 @@ export default function MolBrief({signedIn,displayName}:{signedIn:boolean,displa
   }).sort((a,b)=>b.score-a.score).slice(0,4),[user.topics,user.saved,articles]);
   const recentCount=articles.filter(a=>a.group==="近期动态").length;
   const sourceCount=new Set(articles.map(a=>new URL(a.url).hostname)).size;
-  const changeView=(v:View)=>{setView(v);setCategory("全部");setLocalQuery("");window.scrollTo({top:0,behavior:"smooth"});};
+  const knowledgeDirectory=useMemo(()=>buildKnowledgeDirectory(articles),[articles]);
+  function entityHref(entity:ArticleEntity) {
+    const entries=[...knowledgeDirectory.drugs,...knowledgeDirectory.targets,...knowledgeDirectory.companies,...knowledgeDirectory.deals];
+    const match=entries.find(e=>e.type===entity.type&&[e.name,...e.aliases].some(n=>n.normalize("NFKC").trim().toLowerCase()===entity.name.normalize("NFKC").trim().toLowerCase()));
+    return match?"/knowledge/"+encodeURIComponent(match.id):"/knowledge";
+  }
+  const changeView=(v:View)=>{setView(v);setCategory("全部");setLocalQuery("");window.history.replaceState(null,"",viewPaths[v]);window.scrollTo({top:0,behavior:"smooth"});};
   const ensureLogin=()=>{
     if(user.signedIn)return true;
     window.location.assign("/login");return false;
@@ -186,12 +205,40 @@ export default function MolBrief({signedIn,displayName}:{signedIn:boolean,displa
     }catch(e){notify((e as Error).message);}
     finally{setBusyId(null);}
   }
-  async function addTopic(name=topicName, query?:string) {
-    if(!ensureLogin()||!name.trim())return;
-    setTopicBusy(true);
-    try{setUser(await api("topics",{action:"add",name:name.trim(),query}));setTopicName("");notify("已关注 "+name.trim());}
-    catch(e){notify((e as Error).message);}
+  function topicSearchQuery(name:string, query?:string) {
+    if(query?.trim()&&query.trim()!==name.trim())return query.trim();
+    const entity=articles.flatMap(a=>a.entities||[]).find(e=>[e.name,...e.aliases||[]].some(n=>n.toLowerCase()===name.trim().toLowerCase()));
+    const english=entity&&[entity.name,...entity.aliases||[]].find(n=>/^[\x20-\x7e]+$/.test(n));
+    return english||query?.trim()||name.trim();
+  }
+  async function addTopic(name=topicName, query?:string, searchAfter=false) {
+    if(!ensureLogin())return;
+    const normalized=name.normalize("NFKC").trim().replace(/\s+/g," ");
+    if(!normalized){setTopicError("请输入一个公司、药物、靶点或研究关键词。");return;}
+    setTopicBusy(true);setTopicError("");setTopicNotice("");
+    const resolvedQuery=topicSearchQuery(normalized,query);
+    try{
+      const already=user.topics.some(t=>t.name.toLowerCase()===normalized.toLowerCase());
+      const updated=await api("topics",{action:"add",name:normalized,query:resolvedQuery});
+      if(!updated.topics.some(t=>t.name.toLowerCase()===normalized.toLowerCase()))throw new Error("关键词未保存成功，请重试。");
+      setUser(updated);setTopicName("");setTopicQuery("");
+      const notice=already?"这个关键词已经在关注列表中。":"已添加“"+normalized+"”，并保存到关注列表。";
+      setTopicNotice(notice);notify(notice);
+      if(searchAfter)await runSearch(user.capabilities.parallel?normalized:resolvedQuery,user.capabilities.parallel?"web":"pubmed");
+    }catch(e){setTopicError((e as Error).message);notify((e as Error).message);}
     finally{setTopicBusy(false);}
+  }
+  async function saveTopicQuery() {
+    if(!editingTopic||!editingQuery.trim())return;
+    setTopicBusy(true);setTopicError("");
+    try{setUser(await api("topics",{action:"update",id:editingTopic.id,query:editingQuery.trim()}));setEditingTopic(null);setTopicNotice("检索式已更新。");}
+    catch(e){setTopicError((e as Error).message);}
+    finally{setTopicBusy(false);}
+  }
+  async function saveArticle(article:Article) {
+    const result=await api("article",{article});
+    setArticles(prev=>[result.article,...prev.filter(a=>a.url!==result.article.url)]);
+    notify("资料已收录，相关专题已更新。");
   }
   async function modifyTopic(topic:Topic,action:"remove"|"promote") {
     try{setUser(await api("topics",{action,id:topic.id}));notify(action==="remove"?"已移除关注。":"已设为长期关注。");}
@@ -324,7 +371,7 @@ export default function MolBrief({signedIn,displayName}:{signedIn:boolean,displa
     <div className="main-shell">
       <header className="topbar">
         <div className="mobile-brand"><Brand small/></div>
-        <div className="breadcrumb">我的阅读空间 <ChevronRight size={13}/> <span>{view==="today"?"今日精选":view==="discover"?"探索发现":view==="saved"?"我的收藏":view==="topics"?"关注主题":"偏好与连接"}</span></div>
+        <div className="breadcrumb">我的阅读空间 <ChevronRight size={13}/> <span>{view==="today"?"今日精选":view==="discover"?"探索发现":view==="saved"?"我的收藏":view==="topics"?"关键词与关注":view==="knowledge"?"药物与 BD 知识库":"偏好与连接"}</span></div>
         <div className="topbar-actions"><label className="quick-search"><Search size={17}/><input aria-label="搜索已收录内容" value={localQuery} onChange={e=>{setLocalQuery(e.target.value);if(view!=="today"&&view!=="saved")setView("today");}} placeholder="搜索已收录内容"/>{localQuery&&<button onClick={()=>setLocalQuery("")} aria-label="清除搜索"><X size={14}/></button>}</label><button className="icon-btn help-button" onClick={()=>setHelpOpen(true)} aria-label="了解研览"><CircleHelp size={19}/></button><div className="topbar-avatar">{user.displayName.slice(0,1).toUpperCase()}</div></div>
       </header>
       <main className="workspace">
@@ -366,10 +413,18 @@ export default function MolBrief({signedIn,displayName}:{signedIn:boolean,displa
         {view==="topics"&&<>
           <div className="page-heading"><div><div className="date-label"><Tag size={15}/> YOUR INTERESTS</div><h1>让关注，有自己的方向<span>。</span></h1><p>长期兴趣保持稳定，新发现可以先试着了解。</p></div></div>
           <div className="mobile-settings-switch"><button className="active">关注主题</button><button onClick={()=>changeView("settings")}>偏好与连接</button></div>
-          <form className="add-topic-form" onSubmit={e=>{e.preventDefault();addTopic();}}><Plus size={20}/><input value={topicName} onChange={e=>setTopicName(e.target.value)} maxLength={70} placeholder="添加公司、药物、靶点或研究方向" aria-label="新关注主题"/><button className="primary-btn" disabled={!topicName.trim()||topicBusy}>{topicBusy?<Loader2 size={16} className="spin"/>:"添加关注"}</button></form>
-          <section className="topics-section"><div className="section-heading"><h2>长期关注 <span className="count-pill">{activeTopics.filter(t=>t.kind==="core").length}</span></h2><span>由你决定，持续保留</span></div><div className="topic-grid">{activeTopics.filter(t=>t.kind==="core").map(t=><div className="topic-card" key={t.id}><div className="topic-card-header"><span className="topic-dot"/><h3>{t.name}</h3><button className="icon-btn" onClick={()=>modifyTopic(t,"remove")} aria-label={"移除 "+t.name}><X size={16}/></button></div><p>{t.reason}</p><button className="text-link" onClick={()=>runSearch(t.query,"pubmed")}>查找相关研究 <ArrowUpRight size={15}/></button></div>)}</div></section>
+          <form className="keyword-form" onKeyDown={e=>{if(e.key==="Enter"&&(e.nativeEvent.isComposing||e.nativeEvent.keyCode===229))e.preventDefault();}} onSubmit={e=>{e.preventDefault();const form=new FormData(e.currentTarget);const submitter=(e.nativeEvent as SubmitEvent).submitter as HTMLButtonElement|null;void addTopic(String(form.get("topicName")||""),String(form.get("topicQuery")||""),submitter?.value!=="save");}}>
+            <label htmlFor="topic-name">关注关键词</label><div className="add-topic-form"><Plus size={20}/><input id="topic-name" name="topicName" value={topicName} onChange={e=>{setTopicName(e.target.value);setTopicError("");}} onKeyDown={e=>{if(e.key==="Enter"&&e.nativeEvent.isComposing)e.preventDefault();}} maxLength={70} placeholder="例如：英矽智能、duvakitug、TL1A" aria-label="新关注主题" required/></div>
+            <label htmlFor="topic-query">英文检索式（可选）</label><input id="topic-query" name="topicQuery" value={topicQuery} onChange={e=>setTopicQuery(e.target.value)} maxLength={500} placeholder='例如："Insilico Medicine" 或 nanobody delivery'/>
+            <p className="field-note">中文名称用于显示；PubMed 更适合英文检索。添加后可立即检索，保存关注不会自动采集资讯。</p>
+            {topicError&&<p className="form-error" role="alert">{topicError}</p>}{topicNotice&&<p className="form-success" role="status">{topicNotice}</p>}
+            <div className="keyword-actions"><button type="submit" value="search" className="primary-btn" disabled={topicBusy||!topicName.trim()}>{topicBusy?<Loader2 size={16} className="spin"/>:<Search size={16}/>}添加并检索</button><button type="submit" value="save" className="secondary-btn" disabled={topicBusy||!topicName.trim()}>仅保存关键词</button></div>
+          </form>
+          {editingTopic&&<form className="topic-query-editor" onKeyDown={e=>{if(e.key==="Enter"&&(e.nativeEvent.isComposing||e.nativeEvent.keyCode===229))e.preventDefault();}} onSubmit={e=>{e.preventDefault();void saveTopicQuery();}}><label htmlFor="edit-query">编辑“{editingTopic.name}”的检索式</label><input id="edit-query" value={editingQuery} onChange={e=>setEditingQuery(e.target.value)} maxLength={500} required/><div className="keyword-actions"><button className="primary-btn" disabled={topicBusy||!editingQuery.trim()}>保存检索式</button><button type="button" className="secondary-btn" onClick={()=>setEditingTopic(null)}>取消</button></div></form>}
+          <section className="topics-section"><div className="section-heading"><h2>长期关注 <span className="count-pill">{activeTopics.filter(t=>t.kind==="core").length}</span></h2><span>由你决定，持续保留</span></div><div className="topic-grid">{activeTopics.filter(t=>t.kind==="core").map(t=><div className="topic-card" key={t.id}><div className="topic-card-header"><span className="topic-dot"/><h3>{t.name}</h3><button className="icon-btn" onClick={()=>modifyTopic(t,"remove")} aria-label={"移除 "+t.name}><X size={16}/></button></div><p>{t.reason}</p><div className="topic-card-actions"><button className="text-link" onClick={()=>runSearch(user.capabilities.parallel?t.name:topicSearchQuery(t.name,t.query),user.capabilities.parallel?"web":"pubmed")}>检索相关资料 <ArrowUpRight size={15}/></button><button className="quiet-btn" onClick={()=>{setEditingTopic(t);setEditingQuery(t.query);}}>编辑检索式</button></div></div>)}</div></section>
           <section className="topics-section"><div className="section-heading"><h2>探索中的方向 <span className="count-pill">{activeTopics.filter(t=>t.kind==="explore").length}</span></h2><span>14 天试用 · 最多 10 个</span></div><div className="topic-grid">{activeTopics.filter(t=>t.kind==="explore").map(t=><div className="topic-card exploration" key={t.id}><div className="topic-card-header"><Sparkles size={16}/><h3>{t.name}</h3><button className="icon-btn" onClick={()=>modifyTopic(t,"remove")} aria-label={"移除 "+t.name}><X size={16}/></button></div><p>{t.reason}</p><div className="topic-card-bottom"><small>至 {formatDate(t.expiresAt?.slice(0,10)||null)}</small><button className="text-link" onClick={()=>modifyTopic(t,"promote")}>长期关注 <Plus size={14}/></button></div></div>)}</div>{!activeTopics.some(t=>t.kind==="explore")&&<div className="empty-inline"><Compass size={23}/><p>探索新的方向后，相关主题会出现在这里。</p><button className="text-link" onClick={()=>changeView("discover")}>去探索 <ArrowRight size={14}/></button></div>}</section>
         </>}
+        {view==="knowledge"&&<KnowledgePanel articles={articles} initialEntityId={initialEntityId} onOpenArticle={openArticle} onSaveArticle={saveArticle}/>}
         {view==="settings"&&<>
           <div className="page-heading"><div><div className="date-label"><Settings2 size={15}/> MAKE IT YOURS</div><h1>按照你的习惯，慢慢读<span>。</span></h1><p>声音、关注与服务连接，都由你掌握。</p></div></div>
           <div className="mobile-settings-switch"><button onClick={()=>changeView("topics")}>关注主题</button><button className="active">偏好与连接</button></div>
@@ -377,12 +432,7 @@ export default function MolBrief({signedIn,displayName}:{signedIn:boolean,displa
             <section className="settings-panel"><div className="panel-title"><Headphones size={19}/><h2>听读偏好</h2></div><div className="setting-row"><div><strong>朗读方式</strong><p>设备朗读现在可用；AI 配音使用连接的固定音色。</p></div><select value={user.preferences.audioMode} onChange={e=>updatePreference({audioMode:e.target.value as "device"|"cloud"})} aria-label="朗读方式"><option value="device">设备朗读</option><option value="cloud" disabled={!user.capabilities.tts}>AI 配音{!user.capabilities.tts?" · 待连接":""}</option></select></div><div className="setting-row"><div><strong>设备声音</strong><p>可选声音由当前浏览器与系统提供。</p></div><select value={user.preferences.voiceUri} onChange={e=>updatePreference({voiceUri:e.target.value})} aria-label="设备声音"><option value="">自动选择中文声音</option>{voices.filter(v=>v.lang.startsWith("zh")||v.lang.startsWith("en")).slice(0,30).map(v=><option key={v.voiceURI} value={v.voiceURI}>{v.name} · {v.lang}</option>)}</select></div><div className="setting-row"><div><strong>播放速度</strong><p>找到舒服的阅读节奏。</p></div><select value={user.preferences.speed} onChange={e=>updatePreference({speed:Number(e.target.value)})} aria-label="播放速度">{[0.8,1,1.2,1.5,1.8].map(v=><option key={v} value={v}>{v} ×</option>)}</select></div><button className="secondary-btn" onClick={()=>articles[0]&&listen(articles[0],[articles[0]])}><Volume2 size={15}/>试听一条摘要</button></section>
             <section className="settings-panel"><div className="panel-title"><Sparkles size={19}/><h2>探索偏好</h2></div><div className="setting-row"><div><strong>自动试用新主题</strong><p>主动探索找到资料后，添加相关方向，14 天后到期。</p></div><button className={"switch "+(user.preferences.autoExplore?"on":"")} role="switch" aria-checked={user.preferences.autoExplore} aria-label="自动试用新主题" onClick={()=>updatePreference({autoExplore:!user.preferences.autoExplore})}><span/></button></div><div className="setting-row"><div><strong>管理关注主题</strong><p>查看、移除或保留你正在关注的方向。</p></div><button className="icon-btn" onClick={()=>changeView("topics")} aria-label="进入主题管理"><ArrowUpRight size={19}/></button></div></section>
           </div><div>
-            <section className="settings-panel"><div className="panel-title"><Network size={19}/><h2>服务连接</h2></div><p className="settings-intro">先阅读，再逐步连接你已有的服务。</p>{[
-              {id:"pubmed",name:"PubMed",description:"论文题录与摘要搜索",connected:true},
-              {id:"parallel",name:"Parallel",description:"全网发现与公开来源检索",connected:user.capabilities.parallel},
-              {id:"llm",name:"摘要模型",description:"兼容 API 的中文解读",connected:user.capabilities.llm},
-              {id:"tts",name:"MiniMax 配音",description:"固定音色与音频缓存",connected:user.capabilities.tts},
-            ].map(s=><div className="connection-row" key={s.id}><div className={"service-icon "+s.id}>{s.id==="pubmed"?<Microscope size={20}/>:s.id==="parallel"?<Network size={20}/>:s.id==="llm"?<Sparkles size={20}/>:<AudioLines size={20}/>}</div><div><strong>{s.name}</strong><p>{s.description}</p></div><button className={"connection-status "+(s.connected?"connected":"")} onClick={()=>s.id==="pubmed"?runSearch("nanobody","pubmed"):setConfigModal(s.id)}>{s.connected?(s.id==="pubmed"?"可使用":"已配置"):"待连接"}{s.connected?<Check size={12}/>:<ChevronRight size={12}/>}</button></div>)}<p className="settings-footnote"><ShieldCheck size={14}/>密钥保留在服务端，不进入网页代码。</p></section>
+            <ServiceSettingsPanel initialService={serviceFocus} onChanged={()=>{api("state").then(setUser).catch(()=>{});}}/>
             <section className="settings-panel compact"><div className="panel-title"><ArrowDownToLine size={18}/><h2>手机也能随手打开</h2></div><p className="settings-intro">将研览添加到主屏幕，像打开一个日常阅读应用。</p><button className="secondary-btn full" onClick={install}>添加到主屏幕 <ArrowUpRight size={15}/></button></section>
           </div></div>
         </>}
@@ -391,7 +441,7 @@ export default function MolBrief({signedIn,displayName}:{signedIn:boolean,displa
       </main>
     </div>
     <nav className="mobile-nav" aria-label="手机导航">{[
-      {v:"today" as View,label:"今日",icon:BookOpen},{v:"discover" as View,label:"发现",icon:Compass},{v:"saved" as View,label:"收藏",icon:Bookmark},{v:"topics" as View,label:"我的",icon:Settings2},
+      {v:"today" as View,label:"今日",icon:BookOpen},{v:"discover" as View,label:"发现",icon:Compass},{v:"knowledge" as View,label:"知识库",icon:FlaskConical},{v:"saved" as View,label:"收藏",icon:Bookmark},{v:"topics" as View,label:"我的",icon:Settings2},
     ].map(({v,label,icon:Icon})=><button key={v} className={view===v||(v==="topics"&&view==="settings")?"active":""} onClick={()=>changeView(v)}><Icon size={21}/><span>{label}</span></button>)}</nav>
     {listening&&<section className="audio-player" aria-label="朗读播放器"><div className="player-progress" style={{width:audioProgress+"%"}}/><div className="player-art"><AudioLines size={24}/></div><button className="player-title" onClick={()=>openArticle(listening)}><span>{audioKind}{playing?" · 正在播放":audioBusy?" · 正在生成":" · 已暂停"}</span><strong>{listening.title}</strong></button><div className="player-controls"><button className="icon-btn previous-track" onClick={()=>nextAudio(-1)} aria-label="上一条"><ChevronLeft size={21}/></button><button className="player-play" onClick={togglePlayback} disabled={audioBusy} aria-label={playing?"暂停":"播放"}>{audioBusy?<Loader2 size={19} className="spin"/>:playing?<Pause size={18} fill="currentColor"/>:<Play size={18} fill="currentColor"/>}</button><button className="icon-btn" onClick={()=>nextAudio(1)} aria-label="下一条"><ChevronRight size={21}/></button><span className="player-speed">{user.preferences.speed} ×</span><button className="icon-btn" onClick={()=>stopAudio()} aria-label="关闭播放器"><X size={18}/></button></div></section>}
     <dialog ref={dialogRef} className="reader-dialog" onCancel={()=>setReader(null)} onClick={e=>{if(e.target===e.currentTarget)setReader(null);}}>
@@ -401,11 +451,18 @@ export default function MolBrief({signedIn,displayName}:{signedIn:boolean,displa
         <div className="reader-source"><div><ShieldCheck size={15}/>{reader.source}</div><span>{readMinutes(reader)} 分钟阅读</span></div>
         <div className="reader-actions"><button className="primary-btn" disabled={audioBusy&&listening?.id===reader.id} onClick={()=>listening?.id===reader.id?togglePlayback():listen(reader,articles)}>{listening?.id===reader.id&&playing?<Pause size={16}/>:<Headphones size={16}/>} {listening?.id===reader.id?(audioBusy?"正在生成":playing?"暂停朗读":audioProgress>=100?"重新收听":"继续朗读"):"收听摘要"}</button><button className="secondary-btn" disabled={busyId===reader.id} onClick={()=>toggleSaved(reader)}><Bookmark size={16} fill={user.saved.includes(reader.id)?"currentColor":"none"}/>{user.saved.includes(reader.id)?"已收藏":"收藏"}</button><a className="secondary-btn" href={reader.url} target="_blank" rel="noopener noreferrer">打开原文 <ExternalLink size={14}/></a></div>
         <div className="reading-basis"><FileText size={15}/><span>阅读依据：{reader.readingBasis}</span></div>
-        <section className="reader-section"><h2>内容摘要</h2><p className="reader-summary">{reader.summary}</p></section>
+        <section className="reader-section"><h2>内容摘要</h2><div className="reader-summary">{reader.summary.split(/\n+/).filter(Boolean).map((p,i)=><p key={i}>{p}</p>)}</div></section>
+        {reader.deepDive?.background&&<section className="reader-section"><h2>背景与问题</h2><p className="deep-dive-text">{reader.deepDive.background}</p></section>}
+        {!!reader.deepDive?.keyFindings?.length&&<section className="reader-section"><h2>主要发现与研究设计</h2><ul className="deep-dive-list">{reader.deepDive.keyFindings.map((p,i)=><li key={i}>{p}</li>)}</ul></section>}
+        {!!reader.deepDive?.quantitativeEvidence?.length&&<section className="reader-section"><h2>关键数据与口径</h2><dl className="evidence-grid">{reader.deepDive.quantitativeEvidence.map((e,i)=><div key={i}><dt>{e.label}</dt><dd><strong>{e.value}</strong>{e.context&&<p>{e.context}</p>}{e.sourceUrl&&<a href={e.sourceUrl} target="_blank" rel="noopener noreferrer">核对来源 <ExternalLink size={12}/></a>}</dd></div>)}</dl></section>}
+        {!!reader.deepDive?.implications?.length&&<section className="reader-section"><h2>如何理解这些信息</h2><ul className="deep-dive-list">{reader.deepDive.implications.map((p,i)=><li key={i}>{p}</li>)}</ul></section>}
         {!!reader.keyPoints.length&&<section className="reader-section"><h2>值得关注</h2><ul className="key-points">{reader.keyPoints.map((p,i)=><li key={i}><span>0{i+1}</span><p>{p}</p></li>)}</ul></section>}
-        <section className="evidence-note"><div><ShieldCheck size={18}/><h2>证据与局限</h2></div><p>{reader.limitations}</p></section>
-        <section className="reader-section"><h2>沿着这篇，继续探索</h2><div className="reader-topic-list">{reader.topics.map(t=><button key={t} onClick={()=>addTopic(t)}><Plus size={13}/>{t}</button>)}</div></section>
-        {(reader.group==="检索结果"||reader.readingBasis.includes("PubMed"))&&<button className="secondary-btn full" onClick={()=>interpret(reader)} disabled={busyId===reader.id}>{busyId===reader.id?<Loader2 size={16} className="spin"/>:<Sparkles size={16}/>}生成中文解读{!user.capabilities.llm&&" · 需连接模型"}</button>}
+        <section className="evidence-note"><div><ShieldCheck size={18}/><h2>证据与局限</h2></div><p>{reader.limitations}</p>{!!reader.deepDive?.limitations?.length&&<ul className="deep-dive-list">{reader.deepDive.limitations.map((p,i)=><li key={i}>{p}</li>)}</ul>}</section>
+        {!!reader.deepDive?.nextQuestions?.length&&<section className="reader-section"><h2>接下来关注什么</h2><ul className="deep-dive-list">{reader.deepDive.nextQuestions.map((p,i)=><li key={i}>{p}</li>)}</ul></section>}
+        {!!reader.entities?.some(e=>e.provenance==="curated")&&<section className="reader-section"><h2>相关药物、靶点与合作</h2><div className="reader-entity-links">{reader.entities.filter(e=>e.provenance==="curated").map((e,i)=><a key={i} href={entityHref(e)}><span>{ENTITY_TYPE_LABELS[e.type]}</span>{e.name}<ArrowUpRight size={14}/></a>)}</div></section>}
+        {reader.sourceReview&&<p className="source-review">来源核对 {reader.sourceReview.checkedAt.slice(0,10)} · {reader.sourceReview.note}</p>}
+        <section className="reader-section"><h2>沿着这篇，继续探索</h2><div className="reader-topic-list">{reader.topics.map(t=>{const followed=user.topics.some(x=>x.name.toLowerCase()===t.toLowerCase());return <button key={t} disabled={topicBusy} onClick={()=>addTopic(t)}>{followed?<Check size={13}/>:<Plus size={13}/>} {t}{followed&&" · 已关注"}</button>;})}</div>{topicNotice&&<p className="form-success" role="status">{topicNotice}</p>}{topicError&&<p className="form-error" role="alert">{topicError}</p>}</section>
+        {<button className="secondary-btn full" onClick={()=>interpret(reader)} disabled={busyId===reader.id}>{busyId===reader.id?<Loader2 size={16} className="spin"/>:<Sparkles size={16}/>}{reader.deepDive?"基于现有材料更新解读":"生成扩展中文解读"}{!user.capabilities.llm&&" · 需连接模型"}</button>}
         <a className="original-link" href={reader.url} target="_blank" rel="noopener noreferrer"><div><span>回到原始来源</span><strong>{reader.source}</strong><small>{new URL(reader.url).hostname}</small></div><ArrowUpRight size={24}/></a>
         <p className="reader-disclaimer">摘要帮助你快速了解信息。关键判断，请结合原始材料。</p>
       </article></>}
@@ -414,7 +471,7 @@ export default function MolBrief({signedIn,displayName}:{signedIn:boolean,displa
       {configModal==="login"?<><Brand/><h2>登录，继续你的阅读空间</h2><p>使用同一账号保存收藏、关注主题和阅读偏好。</p><a className="primary-btn full" href="/login">使用站点账号登录 <ArrowRight size={16}/></a></>:
       installHelp?<><div className="info-symbol"><ArrowDownToLine size={27}/></div><h2>让研览更容易打开</h2><p><strong>iPhone：</strong>在 Safari 打开网站，点击分享按钮，再选择“添加到主屏幕”。</p><p><strong>Android：</strong>在浏览器菜单中选择“安装应用”或“添加到主屏幕”。</p><p className="muted">不同系统与浏览器的入口名称可能略有不同。</p></>:
       helpOpen?<><Brand/><h2>读懂进展，发现下一条线索。</h2><p>研览是你的制药与研究情报站。收录药企动态、研究论文和 AI 工具，帮助你阅读、收藏，也适度拓展兴趣。</p><div className="about-points"><span><CheckCheck size={17}/>真实来源，保留原始日期</span><span><ShieldCheck size={17}/>区分公告、论文与证据范围</span><span><Compass size={17}/>关注可编辑，探索可撤销</span></div><p className="muted">当前为首版。PubMed 搜索、收藏和设备朗读可使用；全网检索、模型解读和固定音色需连接相应服务。</p></>:
-      configModal&&<><div className="info-symbol"><Network size={27}/></div><h2>{configModal==="parallel"?"连接 Parallel":configModal==="tts"?"连接 AI 配音":"连接摘要模型"}</h2><p>{configModal==="parallel"?"连接你已有的搜索服务后，即可在探索页检索药企公告、药物进展与其他公开信息。":configModal==="tts"?"连接 MiniMax 并指定一个音色后，可以生成并保存固定音色的摘要音频。现阶段仍可使用设备朗读。":"连接兼容接口的模型后，可将检索材料整理为中文摘要、要点与证据局限。"}</p><div className="config-fields"><span>需要配置的服务端项目</span>{(configModal==="parallel"?["PARALLEL_API_KEY"]:configModal==="tts"?["MINIMAX_API_KEY","MINIMAX_VOICE_ID"]:["LLM_BASE_URL","LLM_API_KEY","LLM_MODEL"]).map(k=><code key={k}>{k}</code>)}</div><p className="muted">在服务器的 .env 中保存服务配置并重启应用后生效。密钥只在服务端使用。</p><button className="primary-btn full" onClick={closeInfo}>知道了</button></>}
+      configModal&&<><div className="info-symbol"><Network size={27}/></div><h2>{configModal==="parallel"?"连接 Parallel":configModal==="tts"?"连接 AI 配音":"连接摘要模型"}</h2><p>{configModal==="parallel"?"连接你已有的搜索服务后，即可在探索页检索药企公告、药物进展与其他公开信息。":configModal==="tts"?"连接 MiniMax 并指定一个音色后，可以生成并保存固定音色的摘要音频。现阶段仍可使用设备朗读。":"连接兼容接口的模型后，可将检索材料整理为中文摘要、要点与证据局限。"}</p><div className="config-fields"><span>需要配置的服务端项目</span>{(configModal==="parallel"?["PARALLEL_API_KEY"]:configModal==="tts"?["MINIMAX_API_KEY","MINIMAX_VOICE_ID"]:["LLM_BASE_URL","LLM_API_KEY","LLM_MODEL"]).map(k=><code key={k}>{k}</code>)}</div><p className="muted">可在网站设置中直接填写，保存后即时生效。</p><button className="primary-btn full" onClick={()=>{setServiceFocus(configModal);setReader(null);closeInfo();changeView("settings");}}>打开网页配置</button></>}
     </dialog>
     {toast&&<div className="toast" role="status"><Check size={16}/>{toast}</div>}
   </div>;

@@ -7,6 +7,8 @@ import {
   savePreferences, signedIn, summarize, updateReading, verifyOrigin, webSearch,
 } from "@/lib/molbrief-server";
 import type { Article } from "@/lib/molbrief-types";
+import { buildKnowledgeDirectory } from "@/lib/knowledge-core";
+import { mergeArticleEvidence } from "@/lib/article-merge";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -30,6 +32,10 @@ export async function GET(request:Request) {
     if(path==="state") {
       await signedIn();
       return Response.json(await getState(),{headers:{"Cache-Control":"private, no-store"}});
+    }
+    if(path==="knowledge") {
+      await signedIn();
+      return Response.json(buildKnowledgeDirectory(await getArticles()),{headers:{"Cache-Control":"private, no-store"}});
     }
     if(path==="update-guide") {
       if(!verifyServiceToken(request)) await signedIn();
@@ -66,15 +72,28 @@ export async function POST(request:Request) {
     }
     await signedIn();
     const input=await readBody(request);
+    if(path==="article") {
+      const item=articleSchema.parse(input.article);
+      const url=canonicalUrl(item.url);
+      const existing=(await getArticles()).find(a=>a.url===url);
+      await ingest([mergeArticleEvidence(existing,{...item,url,id:existing?.id||"",collectedAt:new Date().toISOString()} as Article)]);
+      const article=(await getArticles()).find(a=>a.url===url);
+      if(!article)throw new AppError("资料保存后未能读回，请刷新重试。",500);
+      return Response.json({article},{headers:{"Cache-Control":"private, no-store"}});
+    }
     if(path==="reading") {
       const body=z.object({articleId:z.string().max(120),action:z.enum(["save","read"]),value:z.boolean()}).parse(input);
       return Response.json(await updateReading(body.articleId,body.action,body.value));
     }
     if(path==="topics") {
-      const body=z.object({action:z.enum(["add","remove","promote"]),id:z.string().max(200).optional(),name:z.string().max(70).optional(),query:z.string().max(500).optional(),kind:z.enum(["core","explore"]).optional(),reason:z.string().max(300).optional()}).parse(input);
+      const body=z.object({action:z.enum(["add","remove","promote","update"]),id:z.string().max(200).optional(),name:z.string().max(70).optional(),query:z.string().max(500).optional(),kind:z.enum(["core","explore"]).optional(),reason:z.string().max(300).optional()}).parse(input);
       const user=await signedIn();
       if(body.action==="remove"&&body.id) await db().prepare("DELETE FROM topics WHERE id=? AND user_id=?").bind(body.id,user.userId).run();
       else if(body.action==="promote"&&body.id) await db().prepare("UPDATE topics SET kind='core',expires_at=NULL WHERE id=? AND user_id=?").bind(body.id,user.userId).run();
+      else if(body.action==="update"&&body.id&&body.query?.trim()) {
+        const result=db().prepare("UPDATE topics SET query=? WHERE id=? AND user_id=?").bind(body.query.trim(),body.id,user.userId).run();
+        if(!result.meta.changes)throw new AppError("这个关注主题不存在，请刷新后重试。",404);
+      }
       else if(body.action==="add"&&body.name) return Response.json(await addTopic({...body,name:body.name}));
       else throw new AppError("请选择要修改的主题。");
       return Response.json(await getState());
