@@ -1,8 +1,16 @@
 # 研览 · MolBrief 部署与迁移
 
-日期：2026-10-27。面向个人使用、单个服务实例和有持久磁盘的服务器。入口是本文件所在的 `self-hosted/` 目录。
+更新日期：2026-11-03。面向个人使用、单个服务实例和有持久磁盘的服务器。入口是本文件所在的 `self-hosted/` 目录。
 
-## 当前 ECS 部署（2026-10-27）
+## 本轮升级（2026-11-02 至 11-03）
+
+关键词入口为 `/topics`，专题目录为 `/knowledge`，服务配置为 `/settings`。基础域名、账号和持久卷沿用既有配置。新迁移新增加密服务设置，保留原业务表。
+
+首次功能升级前备份：`/app/var/backups/molbrief-2026-11-02T14-08-53-005Z-1f67e47d`；旧镜像额外保留为 `molbrief:pre-knowledge-20261102`。最终数据保护更新前另有 `/app/var/backups/molbrief-2026-11-02T22-38-39-372Z-d8c99829`。最终重启验收后备份为 `/app/var/backups/molbrief-2026-11-02T22-44-04-858Z-18a72f31`，同时复制到宿主与本机私有备份目录。升级后的本机、真实服务器与外部服务检查以 `VERIFICATION.md` 的本轮记录为准。
+
+下方 2026-10-27 的数量、备份和验证是基础部署历史；当前用户资料不能按历史初始状态重新初始化。
+
+## ECS 运行位置与基础部署
 
 已通过本机 `/Users/xiangli/ecs-connection.sh` 中的连接方式访问服务器：
 
@@ -22,7 +30,7 @@ Cloudflare 已添加并代理 A 记录 `todayai` → `43.156.73.7`，权威 DNS 
 
 已执行 `certbot renew --cert-name todayai.xxlab.xyz --dry-run --run-deploy-hooks --no-random-sleep-on-renew`：模拟续期及 Nginx 检查 / reload 的 deploy hook 均成功。此参数仅跳过本次演练的随机等待，未改变日常续期任务。
 
-服务器 P0 验收已通过：真实容器完成认证、重启持久化、重复导入、服务令牌隔离和备份读回；从 ECS 经公网 HTTPS 域名执行的 10 项检查全部通过。当前为 8 篇文章、4 个默认主题，无测试收藏或已读记录。用户已确认手机能打开登录页；手机登录后的收藏、声音与主屏幕入口仍待验收。当前 Mac 的 curl 与内嵌浏览器访问域名仍出现 `ERR_CONNECTION_CLOSED`，原因未确定；服务器侧的源站证书与 Cloudflare 公网访问均已通过，不能据此宣称 Mac 浏览器验收通过。检查范围见 `VERIFICATION.md`。
+2026-10-27 初次 P0 验收通过：真实容器完成认证、重启持久化、重复导入、服务令牌隔离和备份读回；从 ECS 经公网 HTTPS 域名执行的 10 项检查全部通过。当时为 8 篇文章、4 个默认主题，无测试收藏或已读记录；此数量不代表当前用户状态。用户已确认手机能打开登录页；手机登录后的收藏、声音与主屏幕入口仍待验收。当前 Mac 的 curl 与内嵌浏览器访问域名仍出现 `ERR_CONNECTION_CLOSED`，原因未确定；服务器侧的源站证书与 Cloudflare 公网访问均已通过，不能据此宣称 Mac 浏览器验收通过。检查范围见 `VERIFICATION.md`。
 
 已生成干净备份 `molbrief-2026-10-27T06-18-24-620Z-2369d05b`，容器内位于 `/app/var/backups/`，并已复制到宿主 `/home/xiangxiang/molbrief/backups/` 与 Mac `/Users/xiangli/.config/molbrief/backups/` 下的同名目录。Mac 使用 Node.js 24 读回确认 8 篇文章、4 个主题且无测试收藏 / 已读。`.env` 另有前述私有备份，不在数据备份或源码中。
 
@@ -137,7 +145,9 @@ docker compose -f compose.yaml -f compose.https.yaml up -d --build
 
 ## 6. 接入你的API
 
-编辑服务器`.env`，加入已有服务的值，然后重建容器环境：
+推荐登录网站的 `/settings`，填写并保存模型、Parallel 或 MiniMax 配置，无需手工编辑文件或重启。密钥不回显，空输入保留，勾选“清除此密钥”后会显式停用，即使旧 `.env` 还留有该服务密钥也不会回退使用。状态分为待配置、已配置待实测与调用已验证；LLM / Parallel 仅点击验证时发出一次测试请求，MiniMax 在实际生成后验收。
+
+环境变量仍可作为初始配置来源。若选择编辑服务器 `.env`，修改后需重建容器环境：
 
 ```bash
 docker compose up -d --force-recreate app
@@ -177,7 +187,9 @@ docker compose exec app node scripts/import-content.mjs data/content-export.json
 docker compose exec app node scripts/backup.mjs
 ```
 
-默认在数据卷的`/app/var/backups/`下创建新的时间戳目录。备份包含SQLite一致性快照、audio目录和backup.json；**不包含.env**。
+默认在数据卷的`/app/var/backups/`下创建新的时间戳目录。备份包含 SQLite 一致性快照、audio 目录和 backup.json，**不包含 `.env`**。数据库可能包含网页设置中加密保存的 API 凭据，因此备份也要按私密文件保存。
+
+v2 清单使用 `containsEncryptedServiceCredentials` 和 `requiresSessionSecretForSettingsRestore` 标记快照内容。恢复这些设置必须同时保留原 `.env` 中的 `SESSION_SECRET`；更换密钥不能解密旧配置。历史 v1 清单的 `includesSecrets:false` 只描述当时尚未引入网页加密配置的备份。
 
 将备份复制到服务器宿主机，例如：
 

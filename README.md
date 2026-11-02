@@ -32,6 +32,11 @@ docker compose up -d --build
 
 ## 现在有什么
 
+- [关键词与检索式](https://todayai.xxlab.xyz/topics)：添加并检索、仅保存、修改查询；NCBI 受限时使用明确标注的 Europe PMC MED 题录备用。
+- [药物、靶点与 BD 知识库](https://todayai.xxlab.xyz/knowledge)：首批 13 专题，来源事实、时间线及手工补充资料；已收录证据持续保留。
+- [网页服务设置](https://todayai.xxlab.xyz/settings)：加密保存 API 配置，保存后立即生效，实际调用状态单独验证。
+- 8 篇首批材料已有更完整的中文概要及六类深读，未配置模型也可阅读这些人工核对内容。
+
 - 8 篇真实来源起始材料，显示摘要、要点、证据局限和原文入口。
 - PubMed 题录与原始摘要搜索；已收录内容搜索与分类。
 - 独立账号登录，收藏、已读、关注和偏好持久保存。
@@ -44,7 +49,7 @@ docker compose up -d --build
 
 ## 内容与数据
 
-`data/seed.json` 是初始阅读内容；`data/content-export.json` 是2026-10-27核对后的线上文章快照。`data/hosted-database-export.json` 完整记录当时6张表：8篇文章，其余表为空。它不是正在运行的数据库。当前运行数据位于 `DATA_DIR`；Docker 使用具名持久卷。
+`data/seed.json` 是初始阅读内容；`data/content-export.json` 以 2026-10-27 核对后的文章快照为基础，已合入本轮扩写，并单独记录编辑更新日期。原始 `data/hosted-database-export.json` 完整记录当时 6 张表：8 篇文章，其余表为空。它不是正在运行的数据库。当前运行数据位于 `DATA_DIR`；Docker 使用具名持久卷。
 
 导入快照（服务已经启动后）：
 
