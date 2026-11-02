@@ -12,5 +12,5 @@ export function mergeArticleEvidence(existing: Article | undefined, incoming: Ar
     const facts = [...new Map([...previous.facts || [], ...entity.facts || []].map(f => [JSON.stringify([f.key, f.status, f.value, f.sourceUrl, f.sourceDate, f.dateBasis, f.evidence]), f])).values()];
     entities.set(key, { ...previous, ...entity, provenance: previous.provenance === "curated" || entity.provenance === "curated" ? "curated" : "suggested", aliases: [...new Set([...previous.aliases || [], ...entity.aliases || []])], facts });
   }
-  return { ...existing, ...incoming, keyPoints: incoming.keyPoints.length ? incoming.keyPoints : existing.keyPoints, entities: [...entities.values()] };
+  return { ...existing, ...incoming, publishedAt: incoming.publishedAt ?? existing.publishedAt, keyPoints: incoming.keyPoints.length ? incoming.keyPoints : existing.keyPoints, entities: [...entities.values()] };
 }
