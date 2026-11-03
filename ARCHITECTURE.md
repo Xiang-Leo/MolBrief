@@ -1,6 +1,6 @@
 # ARCHITECTURE — 自部署版
 
-更新日期：2026-11-03。此文描述交付目标与代码边界；实际运行验证见 `VERIFICATION.md`，安装命令与环境配置见 `DEPLOYMENT.md`。
+更新日期：2026-11-04。此文描述交付目标与代码边界；实际运行验证见 `VERIFICATION.md`，安装命令与环境配置见 `DEPLOYMENT.md`。
 
 ## 版本关系
 
@@ -54,6 +54,7 @@ flowchart TD
 | `runs` | 任务 ID、类型、状态、启动时间、详情；当前主要用于配音并发锁 |
 | `collection_state / collection_runs` | 每日计划、队列、游标、心跳与租约；逐轮安全日志及完成数量 |
 | `collection_usage / collection_cache / collection_backoff` | 北京日界付费次数、查询指纹缓存与来源退避时间 |
+| `summary_jobs` | 单篇手动解读的持久队列、快照、状态和租约；同一文章只允许一个活跃任务 |
 
 Article 包含 `title`、可选 `originalTitle`、`category`、`publishedAt`、`url`、`source`、`type`、`summary`、`keyPoints`、`limitations`、`topics`、`readingBasis`、`group`、`collectedAt` 与可选 `coverSource`。可选的 `deepDive` 保存六类深读，`entities` 保存药物 / 靶点 / 公司 / 合作与逐条来源事实；`sourceText` 是原始摘录，`sourceReview` 记录核对范围和时间。`publishedAt` 与 `collectedAt` 含义不同；无法确认精确发表日期时保留 `null`。
 
@@ -81,7 +82,8 @@ URL 去除已知追踪参数与片段后生成稳定 ID，相同 URL 更新既�
 | POST `/preferences` | 更新声音和探索偏好 | 会话 |
 | POST `/search` | PubMed 或 Parallel 搜索 | 会话 |
 | POST `/collect` | 收录并收藏候选 | 会话 |
-| POST `/summarize` | 调用模型并保存解读 | 会话及模型配置 |
+| POST `/summarize` | 保存候选并排队单篇解读，返回 202 和任务 ID | 会话及模型配置 |
+| GET `/summary-status/{id}` | 读取任务进度 / 安全错误，完成后返回文章 | 仅会话 |
 | POST `/audio` | 为已收录文章生成音频 | 会话及配音配置 |
 | GET `/audio/{id}` | 读取音频文件 | 会话 |
 
@@ -100,3 +102,7 @@ URL 去除已知追踪参数与片段后生成稳定 ID，相同 URL 更新既�
 所有者通过 `GET / POST /api/collection` 查看记录、修改设置或排队；服务令牌不能管理这些设置，普通会话不能执行 tick。检索直接复用现有来源与模型适配，未配置或未勾选的付费能力不会调用。付费次数在调用前预留，失败也计入每日上限；并发运行使用数据库租约隔离，异常中断可以恢复。
 
 已有 URL 在模型调用前去重，写入使用 `INSERT OR IGNORE`，不覆盖人工扩写、来源事实、收藏或已读。新条目保留原始摘要 / 搜索摘录的阅读范围；没有生成中文或提取全文时不会标为已完成。首页轮询采集状态，发现新完成记录后读取更新内容。它是关注关键词采集，不是完整事件合并或自主专题研究。
+
+补全旧文章使用独立 summarize 模式，不执行检索；遵守本次篇数、每轮和每日自动模型次数上限，条件写入跳过生成期间已被修改的原文 / 标题 / 摘要。单篇手动解读进入 `summary_jobs`，先于下一轮采集执行，客户端只发短状态请求；worker 使用数据库门限串行处理单篇和采集任务。手动单篇是明确的一次模型调用，不计入自动任务每日次数，界面单独说明。中断的单篇任务租约过期后标失败，不自动再次计费。
+
+模型请求按官方主机与已知模型限定兼容参数；读取 SSE 时只累计最终答案，忽略 reasoning_content。完整输出经过来源白名单和结构校验后才写入，网页请求不再承担等待模型生成的长连接。
