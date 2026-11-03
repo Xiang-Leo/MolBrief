@@ -204,6 +204,16 @@ try {
   assert.ok(!JSON.stringify(settings).includes(dummyModelKey));
   state = await ownerJson('/api/state'); assert.equal(state.capabilities.llm, true);
   pass('saved test-only model configuration takes effect immediately without exposing its key');
+  response=await request('/api/summarize',{session:true,body:{article},headers:{Origin:origin}});
+  assert.equal(response.status,202);const summaryJob=(await response.json()).job;
+  assert.equal(summaryJob.status,'queued');
+  response=await request('/api/summarize',{session:true,body:{article},headers:{Origin:origin}});
+  assert.equal((await response.json()).job.id,summaryJob.id);
+  assert.equal((await request('/api/summary-status/'+summaryJob.id)).status,401);
+  assert.equal((await request('/api/summary-status/'+summaryJob.id,{service:true})).status,401);
+  assert.equal((await ownerJson('/api/summary-status/'+summaryJob.id)).job.status,'queued');
+  assert.equal((await request('/api/summarize',{session:true,body:{article},headers:{Origin:'https://other.example'}})).status,403);
+  pass('single summaries return a persistent deduplicated job without a synchronous provider call and status remains owner-only');
   settings = await ownerJson('/api/settings', { action: 'save', values: { LLM_API_KEY: '' } });
   assert.equal(settings.fields.LLM_API_KEY.present, true);
   settings = await ownerJson('/api/settings', { action: 'save', clear: ['LLM_API_KEY'] });
@@ -320,6 +330,8 @@ try {
   assert.equal(collection.settings.hour, 9); assert.equal(collection.settings.maxNewPerRun, 3);
   assert.equal(collection.settings.enabled, false); assert.equal(collection.queued, true);
   pass('collection settings, queued request and schedule survive a production process restart');
+  assert.equal((await ownerJson('/api/summary-status/'+summaryJob.id)).job.status,'queued');
+  pass('queued single-article summary jobs survive a production process restart without silently invoking a provider');
   response = await request('/api/session', { session: true, body: { action: 'logout' }, headers: { Origin: origin } });
   assert.equal(response.status, 200); assert.ok(response.headers.get('set-cookie')?.toLowerCase().includes('max-age=0'));
   pass('logout clears the browser session cookie');

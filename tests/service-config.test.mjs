@@ -34,13 +34,13 @@ test('new migration preserves existing articles and settings remain absent until
   database = new LocalDatabase({ dataDir });
   t.after(() => { database.close(); return rm(directory, { recursive: true, force: true }); });
   const store = new ServiceConfigStore({ database, environment: { SESSION_SECRET: '12'.repeat(32) } });
-  assert.deepEqual(database.appliedMigrations, ['0001_service_settings.sql', '0002_auto_collection.sql','0003_collection_progress.sql']);
+  assert.deepEqual(database.appliedMigrations, ['0001_service_settings.sql', '0002_auto_collection.sql','0003_collection_progress.sql','0004_summary_jobs.sql']);
   assert.equal(database.prepare("SELECT saved FROM reading_state WHERE article_id='existing'").first().saved, 1);
   assert.equal(store.settings().services.llm.status, 'unconfigured');
   assert.equal(database.prepare('SELECT count(*) AS n FROM service_settings').first().n, 0);
   store.save(llm);
   assert.equal(database.prepare('SELECT count(*) AS n FROM articles').first().n, 1);
-  assert.equal(database.prepare('SELECT count(*) AS n FROM __molbrief_migrations').first().n, 4);
+  assert.equal(database.prepare('SELECT count(*) AS n FROM __molbrief_migrations').first().n, 5);
 });
 
 test('API keys are authenticated ciphertext and public settings never contain secret values', async t => {

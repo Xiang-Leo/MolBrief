@@ -75,3 +75,7 @@ export const collectionCache = sqliteTable("collection_cache", {
 export const collectionBackoff = sqliteTable("collection_backoff", {
   source: text("source").primaryKey(), retryAt: text("retry_at").notNull(),
 });
+export const summaryJobs=sqliteTable('summary_jobs',{
+  id:text('id').primaryKey(),articleId:text('article_id').notNull(),payloadJson:text('payload_json').notNull(),status:text('status').notNull(),
+  createdAt:text('created_at').notNull(),startedAt:text('started_at'),finishedAt:text('finished_at'),leaseToken:text('lease_token'),leaseExpiresAt:text('lease_expires_at'),error:text('error').notNull().default(''),
+});

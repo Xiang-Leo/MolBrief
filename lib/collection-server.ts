@@ -5,6 +5,7 @@ import {
 } from "./molbrief-server";
 import type { Article } from "./molbrief-types";
 import { applyGeneratedSummary } from "./article-merge";
+import {manualSummaryActive,tickManualSummary} from './summary-server';
 
 const store = () => new CollectionStore({ database: db() });
 
@@ -12,7 +13,9 @@ export function collectionStatus() {
   const pendingSummaries=db().prepare("SELECT payload FROM articles").all<{payload:string}>().results.filter(row=>{
     try{return !JSON.parse(row.payload).deepDive;}catch{return false;}
   }).length;
-  return { ...store().status(), capabilities: capabilities(),pendingSummaries };
+  const status=store().status();
+  const manualActive=manualSummaryActive();
+  return { ...status,running:status.running||manualActive,worker:{...status.worker,healthy:status.worker.healthy||manualActive},capabilities: capabilities(),pendingSummaries };
 }
 export function saveCollectionSettings(settings: Record<string, unknown>) {
   store().save(settings);
@@ -48,7 +51,16 @@ async function insertDiscoveredArticle(value: Article): Promise<boolean> {
 }
 
 export async function tickCollection() {
-  const result = await store().tick({
+  const collector=store();
+  db().prepare("UPDATE collection_state SET last_seen_at=? WHERE owner_id='owner'").bind(new Date().toISOString()).run();
+  if(!collector.status().running){
+    const manual=await tickManualSummary();
+    if(manual.processed||manual.busy){
+      db().prepare("UPDATE collection_state SET last_seen_at=? WHERE owner_id='owner'").bind(new Date().toISOString()).run();
+      return {...collectionStatus(),manualSummary:manual};
+    }
+  }
+  const result = await collector.tick({
     capabilities: capabilities(),
     search: (query: string, source: string, options:{signal?:AbortSignal}={}) => source === "web" ? webSearch(query,options) : pubmedSearch(query,options),
     getArticles,

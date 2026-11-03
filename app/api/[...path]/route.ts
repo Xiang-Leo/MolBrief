@@ -3,12 +3,13 @@ import { verifyServiceToken } from "@/lib/auth";
 import { readAudioObject } from "@/lib/local-storage";
 import {
   addTopic, AppError, articleSchema, canonicalUrl, cloudAudio, db, errorResponse,
-  getArticles, getState, hash, ingest, pubmedSearch, readBody,
-  savePreferences, signedIn, summarize, updateReading, verifyOrigin, webSearch,
+  getArticles, getState, ingest, pubmedSearch, readBody,
+  savePreferences, signedIn, updateReading, verifyOrigin, webSearch,
 } from "@/lib/molbrief-server";
 import type { Article } from "@/lib/molbrief-types";
 import { buildKnowledgeDirectory } from "@/lib/knowledge-core";
-import { applyGeneratedSummary, mergeArticleEvidence } from "@/lib/article-merge";
+import { mergeArticleEvidence } from "@/lib/article-merge";
+import {enqueueSummary,summaryStatus} from '@/lib/summary-server';
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -33,6 +34,7 @@ export async function GET(request:Request) {
       await signedIn();
       return Response.json(await getState(),{headers:{"Cache-Control":"private, no-store"}});
     }
+    if(path.startsWith('summary-status/')){await signedIn();return Response.json(await summaryStatus(path.slice('summary-status/'.length)),{headers:{'Cache-Control':'private, no-store'}});}
     if(path==="knowledge") {
       await signedIn();
       return Response.json(buildKnowledgeDirectory(await getArticles()),{headers:{"Cache-Control":"private, no-store"}});
@@ -119,17 +121,7 @@ export async function POST(request:Request) {
       return Response.json({...await updateReading(article.id,"save",true),article});
     }
     if(path==="summarize") {
-      const item=articleSchema.parse(input.article);
-      const url=canonicalUrl(item.url);
-      const id="art-"+(await hash(url)).slice(0,16);
-      const existing=(await getArticles()).find(a=>a.url===url);
-      const candidate={...item,url,id,collectedAt:new Date().toISOString()} as Article;
-      const inputArticle=existing?mergeArticleEvidence(candidate,existing):candidate;
-      const generated=await summarize(inputArticle);
-      const latest=(await getArticles()).find(a=>a.url===url);
-      await ingest([applyGeneratedSummary(latest,generated)]);
-      const article=(await getArticles()).find(a=>a.url===url);
-      return Response.json({article});
+      return Response.json(await enqueueSummary(input.article),{status:202,headers:{'Cache-Control':'private, no-store'}});
     }
     if(path==="audio") {
       const body=z.object({articleId:z.string().max(120)}).parse(input);

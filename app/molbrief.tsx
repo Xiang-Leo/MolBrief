@@ -52,7 +52,7 @@ type ApiResponses = {
   topics: UserState;
   preferences: UserState;
   search: { articles: Article[]; source: "pubmed" | "web" };
-  summarize: { article: Article };
+  summarize: { article?: Article; job?:{id:string;status:string;error?:string} };
   audio: { id: string; cached: boolean };
   article: { article: Article };
   collection: CollectionSummary;
@@ -119,6 +119,8 @@ export default function MolBrief({signedIn,displayName,initialView="today",initi
   const [summaryBusy,setSummaryBusy]=useState<string|null>(null);
   const [summaryError,setSummaryError]=useState<{id:string;message:string}|null>(null);
   const summaryRequest=useRef(false);
+  const summaryPollAbort=useRef<AbortController|null>(null);
+  const [summaryProgress,setSummaryProgress]=useState("");
   const [hideRead,setHideRead]=useState(false);
   const [voices,setVoices]=useState<SpeechSynthesisVoice[]>([]);
   const [listening,setListening]=useState<Article|null>(null);
@@ -157,6 +159,7 @@ export default function MolBrief({signedIn,displayName,initialView="today",initi
       if("speechSynthesis" in window)window.speechSynthesis.removeEventListener("voiceschanged",loadVoices);
       window.removeEventListener("beforeinstallprompt",beforeInstall);
       if(toastTimer.current)clearTimeout(toastTimer.current);
+      summaryPollAbort.current?.abort();
     };
   },[]);
   useEffect(()=>{
@@ -300,13 +303,28 @@ export default function MolBrief({signedIn,displayName,initialView="today",initi
     if(!user.capabilities.llm){setConfigModal("llm");return;}
     if(summaryRequest.current)return;
     summaryRequest.current=true;setSummaryBusy(a.id);setSummaryError(null);
+    const controller=new AbortController();summaryPollAbort.current=controller;setSummaryProgress("正在提交后台解读任务…");
     try{
-      const result=await api("summarize",{article:a});
-      setReader(current=>current?.id===a.id?result.article:current);setArticles(prev=>[result.article,...prev.filter(x=>x.id!==a.id)]);
-      setSearchResults(prev=>prev?.map(x=>x.id===a.id?result.article:x)||null);
+      let result=await api("summarize",{article:a});
+      if(result.job){
+        const id=result.job.id;
+        for(let attempt=0;attempt<450;attempt++){
+          const response=await fetch('/api/summary-status/'+encodeURIComponent(id),{cache:'no-store',signal:controller.signal});
+          const data=await response.json();
+          if(!response.ok)throw new Error(data.error||"解读状态暂时不可用，请稍后刷新。");
+          if(data.job.status==='failed')throw new Error(data.job.error||"中文解读未完成，请稍后重试。");
+          if(data.job.status==='done'&&data.article){result={article:data.article};break;}
+          setSummaryProgress(data.job.status==='running'?"后台正在生成中文解读；你可以离开页面，完成后会保存到资料库。":"已排队，等待后台执行；其他任务运行时可能需要稍候。");
+          await new Promise(resolve=>setTimeout(resolve,2000));
+        }
+      }
+      if(!result.article)throw new Error("任务仍在后台处理，稍后刷新文章查看结果。");
+      const article=result.article;
+      setReader(current=>current?.id===a.id?article:current);setArticles(prev=>[article,...prev.filter(x=>x.id!==a.id)]);
+      setSearchResults(prev=>prev?.map(x=>x.id===a.id?article:x)||null);
       notify("中文解读已生成并收录。");
-    }catch(e){setSummaryError({id:a.id,message:(e as Error).message});}
-    finally{summaryRequest.current=false;setSummaryBusy(null);}
+    }catch(e){if(!controller.signal.aborted)setSummaryError({id:a.id,message:(e as Error).message});}
+    finally{summaryRequest.current=false;setSummaryBusy(null);summaryPollAbort.current=null;}
   }
   function stopAudio(clear=true) {
     generationRef.current++;
@@ -502,7 +520,9 @@ export default function MolBrief({signedIn,displayName,initialView="today",initi
         {reader.sourceReview&&<p className="source-review">来源核对 {reader.sourceReview.checkedAt.slice(0,10)} · {reader.sourceReview.note}</p>}
         <section className="reader-section"><h2>沿着这篇，继续探索</h2><div className="reader-topic-list">{reader.topics.map(t=>{const followed=user.topics.some(x=>x.name.toLowerCase()===t.toLowerCase());return <button key={t} disabled={topicBusy} onClick={()=>addTopic(t)}>{followed?<Check size={13}/>:<Plus size={13}/>} {t}{followed&&" · 已关注"}</button>;})}</div>{topicNotice&&<p className="form-success" role="status">{topicNotice}</p>}{topicError&&<p className="form-error" role="alert">{topicError}</p>}</section>
         <button className="secondary-btn full" onClick={()=>interpret(reader)} disabled={!!summaryBusy}>{summaryBusy===reader.id?<Loader2 size={16} className="spin"/>:<Sparkles size={16}/>}{summaryBusy===reader.id?"正在生成中文解读…":reader.deepDive?"基于现有材料更新解读":"生成扩展中文解读"}{!user.capabilities.llm&&" · 需连接模型"}</button>
-        {summaryBusy===reader.id&&<p className="reader-summary-status" role="status">正在根据现有材料整理中文解读，通常需要数十秒；请勿重复点击。</p>}
+        {summaryBusy===reader.id&&<p className="reader-summary-status" role="status">{summaryProgress}</p>}
+        {summaryBusy&&summaryBusy!==reader.id&&<p className="reader-summary-status" role="status">另一篇文章正在解读，完成后可继续。</p>}
+        {user.capabilities.llm&&<p className="reader-summary-status">单篇生成会发起一次模型调用；自动采集的每日限额单独计算。</p>}
         {summaryError?.id===reader.id&&<p className="form-error reader-summary-status" role="alert">{summaryError.message}</p>}
         <a className="original-link" href={reader.url} target="_blank" rel="noopener noreferrer"><div><span>回到原始来源</span><strong>{reader.source}</strong><small>{new URL(reader.url).hostname}</small></div><ArrowUpRight size={24}/></a>
         <p className="reader-disclaimer">摘要帮助你快速了解信息。关键判断，请结合原始材料。</p>

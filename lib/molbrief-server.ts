@@ -221,7 +221,7 @@ export async function summarize(article:Article, options:{signal?:AbortSignal}={
   const response=await (await remote(url,{
     method:"POST",signal:options.signal,headers:{"Content-Type":"application/json",Authorization:"Bearer "+config.LLM_API_KEY},
     body:JSON.stringify(chatCompletionPayload(config,buildSummaryRequest(article))),
-  },90000)).json() as any;
+  },180000)).json() as any;
   try { return mergeModelSummary(article,completionContent(response)); }
   catch(error) {
     if(error instanceof ModelResponseError) throw new AppError(error.message,502,undefined,error.code);
