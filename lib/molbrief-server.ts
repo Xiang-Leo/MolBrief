@@ -7,7 +7,7 @@ import { searchLiterature, LiteratureSearchError } from "./literature-search-cor
 import seedData from "@/data/seed.json";
 import { Article, DEFAULT_PREFERENCES, Preferences, STARTER_TOPICS, Topic } from "./molbrief-types";
 import { mergeArticleEvidence } from "./article-merge";
-import { chatCompletionPayload, completionContent, ModelResponseError } from "./model-request.mjs";
+import { chatCompletionPayload, completionContent,readCompletionResponse, ModelResponseError } from "./model-request.mjs";
 
 type Runtime = NodeJS.ProcessEnv & {
   PARALLEL_API_KEY?: string;
@@ -210,7 +210,7 @@ export async function webSearch(query:string, options:{signal?:AbortSignal}={}):
   }
   return out;
 }
-export async function summarize(article:Article, options:{signal?:AbortSignal}={}):Promise<Article> {
+export async function summarize(article:Article, options:{signal?:AbortSignal;timeoutMs?:number}={}):Promise<Article> {
   if(!article.sourceText&&!article.deepDive&&article.type==="网页检索"&&article.readingBasis==="搜索结果摘录")article={...article,sourceText:article.summary};
   const config=runtime();
   if(!(config.LLM_API_KEY&&config.LLM_BASE_URL&&config.LLM_MODEL)) throw new AppError("中文解读需要先连接摘要模型。原始摘要和来源链接仍可阅读。",501);
@@ -218,10 +218,10 @@ export async function summarize(article:Article, options:{signal?:AbortSignal}={
   if(base.protocol!=="https:"||base.username||base.password||base.search||base.hash) throw new AppError("模型服务地址需为不含账号或查询参数的 HTTPS API 根路径。",500);
   const url=base.href.replace(/\/$/,"")+"/chat/completions";
   try {
-  const response=await (await remote(url,{
+  const response=await readCompletionResponse(await remote(url,{
     method:"POST",signal:options.signal,headers:{"Content-Type":"application/json",Authorization:"Bearer "+config.LLM_API_KEY},
-    body:JSON.stringify(chatCompletionPayload(config,buildSummaryRequest(article))),
-  },180000)).json() as any;
+    body:JSON.stringify(chatCompletionPayload(config,{...buildSummaryRequest(article),stream:true})),
+  },options.timeoutMs??180000));
   try { return mergeModelSummary(article,completionContent(response)); }
   catch(error) {
     if(error instanceof ModelResponseError) throw new AppError(error.message,502,undefined,error.code);
@@ -229,6 +229,7 @@ export async function summarize(article:Article, options:{signal?:AbortSignal}={
     throw error;
   }
   } catch(error) {
+    if(error instanceof ModelResponseError)throw new AppError(error.message,502,undefined,error.code);
     if(error instanceof Error&&["TimeoutError","AbortError"].includes(error.name))throw new AppError("中文解读超过本次等待时间，原始内容已保留。请稍后重试，或检查模型服务响应速度。",504,undefined,"model-timeout");
     throw error;
   }

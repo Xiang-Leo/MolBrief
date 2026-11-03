@@ -19,7 +19,7 @@ export async function summaryStatus(id:string){
 }
 export function manualSummaryActive(){return jobs().active();}
 export async function tickManualSummary(){
-  return jobs().tick({summarize,safeError:(error:unknown)=>error instanceof AppError?error.message:'中文解读未完成，原始内容已保留，请稍后重试。',
+  return jobs().tick({summarize:(article:Article)=>summarize(article,{timeoutMs:240000}),safeError:(error:unknown)=>error instanceof AppError?error.message:'中文解读未完成，原始内容已保留，请稍后重试。',
     write:async(original:Article,generated:Article)=>{
       const row=db().prepare('SELECT payload FROM articles WHERE id=?').bind(original.id).first<{payload:string}>();if(!row)return false;
       const current=JSON.parse(row.payload) as Article;
