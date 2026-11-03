@@ -28,6 +28,8 @@ type CollectionRun = {
   duplicates: number;
   summarized: number;
   errors: string[];
+  mode?: "collect" | "summarize";
+  stage?: string; currentLabel?: string; processed?: number; summaryAttempts?: number;
 };
 type CollectionState = {
   settings: CollectionSettings;
@@ -38,6 +40,7 @@ type CollectionState = {
   today: { webQueries: number; summaries: number };
   capabilities: { parallel: boolean; llm: boolean };
   runs: CollectionRun[];
+  pendingSummaries?: number;
 };
 type LimitKey = "maxQueriesPerRun" | "maxNewPerRun" | "maxWebQueriesPerDay" | "maxSummariesPerDay";
 type CollectionDraft = Omit<CollectionSettings, LimitKey> & Record<LimitKey, string>;
@@ -52,6 +55,7 @@ const statuses: Record<CollectionRunStatus, string> = {
   running: "进行中", success: "已完成", partial: "部分完成", failed: "未完成", interrupted: "已中断", skipped: "已跳过",
 };
 const terminal = (status: CollectionRunStatus) => status !== "running";
+const phaseNames:Record<string,string>={loading:"正在读取资料",searching:"正在检索",summarizing:"正在生成中文解读",saving:"正在保存",finished:"正在结束"};
 const count = (value: number) => Number.isFinite(value) ? value.toLocaleString("zh-CN") : "—";
 
 function formatTime(value: string | null, empty = "暂无记录") {
@@ -95,6 +99,7 @@ export default function CollectionSettingsPanel({ onUpdated }: { onUpdated?: () 
   const [error, setError] = useState("");
   const [loadError, setLoadError] = useState("");
   const [message, setMessage] = useState("");
+  const [batchLimit,setBatchLimit]=useState(3);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<LimitKey, string>>>({});
   const [pageVisible, setPageVisible] = useState(true);
   const [inView, setInView] = useState(true);
@@ -175,7 +180,7 @@ export default function CollectionSettingsPanel({ onUpdated }: { onUpdated?: () 
     if (limits.some(limit => limit.key === key)) setFieldErrors(current => ({ ...current, [key]: undefined }));
   }
 
-  async function submit(action: "save" | "run") {
+  async function submit(action: "save" | "run", mode:"collect"|"summarize"="collect") {
     if (!state || !draft || busyRef.current || (action === "run" && (state.running || state.queued))) return;
     let settings: CollectionSettings | undefined;
     if (action === "save") {
@@ -201,13 +206,13 @@ export default function CollectionSettingsPanel({ onUpdated }: { onUpdated?: () 
     try {
       const response = await fetch("/api/collection", {
         method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal,
-        body: JSON.stringify(action === "save" ? { action, settings } : { action }),
+        body: JSON.stringify(action === "save" ? { action, settings } : { action,mode,...(mode==="summarize"?{limit:batchLimit}:{}) }),
       });
       const next = await readResponse(response);
       if (mounted.current && version === requestVersion.current) {
         applyState(next, action === "save");
         setLoadError("");
-        setMessage(action === "save" ? "采集设置已保存。" : next.worker.healthy ? "任务已排队，将在一分钟内开始。你可以离开页面，完成后新内容会出现在今日精选。" : "任务已排队，采集服务恢复后将继续处理。已有内容仍可阅读。");
+        setMessage(action === "save" ? "采集设置已保存。" : next.worker.healthy ? (mode==="summarize"?"中文补全已排队，将处理已收录但尚无扩展解读的文章，并遵守今日调用上限。":"新资料采集已排队，将在一分钟内开始；进度和结果会显示在下方。") : "任务已排队，采集服务恢复后将继续处理。已有内容仍可阅读。");
       }
     } catch (failure) {
       if (mounted.current && !controller.signal.aborted)
@@ -270,8 +275,11 @@ export default function CollectionSettingsPanel({ onUpdated }: { onUpdated?: () 
             {fieldErrors[limit.key] && <p id={"collection-" + limit.key + "-error"} className="collection-field-error">{fieldErrors[limit.key]}</p>}
           </div>)}</div>
         </fieldset>
-        <div className="collection-usage"><span>今日用量</span><span>全网查询 <strong>{count(state.today.webQueries)}</strong> / {state.settings.maxWebQueriesPerDay}</span><span>中文解读 <strong>{count(state.today.summaries)}</strong> / {state.settings.maxSummariesPerDay}</span></div>
-        <div className="collection-actions"><button type="submit" className="primary-btn" disabled={!!busy || !dirty}>{busy === "save" ? <Loader2 size={16} className="spin"/> : <Check size={16}/>}保存采集设置</button><button type="button" className="secondary-btn" disabled={!!busy || dirty || active} onClick={() => submit("run")}>{busy === "run" || state.running ? <Loader2 size={16} className="spin"/> : state.queued ? <Clock3 size={16}/> : <Play size={15}/>} {state.running ? "正在采集" : state.queued ? "任务已排队" : busy === "run" ? "正在排队" : "立即采集"}</button></div>
+        <div className="collection-usage"><span>今日调用尝试（失败也计入）</span><span>全网查询 <strong>{count(state.today.webQueries)}</strong> / {state.settings.maxWebQueriesPerDay}</span><span>中文模型 <strong>{count(state.today.summaries)}</strong> / {state.settings.maxSummariesPerDay}</span></div>
+        <div className="collection-actions"><button type="submit" className="primary-btn" disabled={!!busy || !dirty}>{busy === "save" ? <Loader2 size={16} className="spin"/> : <Check size={16}/>}保存采集设置</button><button type="button" className="secondary-btn" disabled={!!busy || dirty || active} onClick={() => submit("run")}>{busy === "run" || state.running ? <Loader2 size={16} className="spin"/> : state.queued ? <Clock3 size={16}/> : <Play size={15}/>} {state.running ? "任务运行中" : state.queued ? "任务已排队" : busy === "run" ? "正在排队" : "立即采集新资料"}</button><button type="button" className="secondary-btn" disabled={!!busy||dirty||active||!state.capabilities.llm||!state.pendingSummaries||state.today.summaries>=state.settings.maxSummariesPerDay} onClick={()=>submit("run","summarize")}>补全已收录中文解读</button></div>
+        <label className="collection-batch-limit">本次补全上限 <select aria-label="本次补全上限" value={batchLimit} onChange={e=>setBatchLimit(Number(e.target.value))}>{[1,3,6,12].map(n=><option key={n} value={n}>{n} 篇</option>)}</select></label>
+        <p className="field-note">待补全扩展解读：{state.pendingSummaries??0} 篇。采集新资料与补全旧文章分别执行；补全同时受本次篇数、每轮处理上限和每日模型次数限制。</p>
+        {state.today.summaries>=state.settings.maxSummariesPerDay&&<p className="form-error" role="status">今日模型调用上限已用完。北京时间次日 00:00 恢复；也可自行修改并保存上限。已有英文摘要仍可阅读。</p>}
         {dirty && <p className="field-note">有尚未保存的修改。先保存，再按新设置立即采集。</p>}
       </form>
       <p className="collection-scope"><ShieldCheck size={15}/><span>新材料只加入今日精选，不会自动收藏。未启用或未配置模型时保留原始摘要。当前按来源 URL 去重，同一事件的不同报道仍可能分别收录。</span></p>
@@ -279,10 +287,12 @@ export default function CollectionSettingsPanel({ onUpdated }: { onUpdated?: () 
         <div className="collection-history-heading"><h3 id="collection-history-heading">最近采集</h3><button type="button" className="quiet-btn" disabled={loading || !!busy} onClick={() => refresh()}><RefreshCw size={14} className={loading ? "spin" : ""}/>刷新状态</button></div>
         <p className="collection-live-status" aria-live="polite">{state.running ? "正在查找和整理材料，完成后会自动更新结果。" : state.queued ? "任务已排队，开始后会在这里显示进度。" : state.worker.healthy ? "采集服务正常，时间均为北京时间。" : "采集服务暂未就绪，时间均为北京时间。"}</p>
         {!runs.length ? <div className="collection-empty"><Search size={22}/><p>还没有采集记录。你可以先保存设置，再手动采集一次。</p></div> : <ol className="collection-run-list">{runs.map(run => <li className={"collection-run run-" + run.status} key={run.id}>
-          <div className="collection-run-heading"><div><strong>{run.trigger === "scheduled" ? "定时采集" : run.trigger === "retry" ? "重试采集" : "手动采集"}</strong><time dateTime={run.startedAt}>{formatTime(run.startedAt)}</time></div><span className={"collection-run-status status-" + run.status}>{run.status === "running" ? <Loader2 size={12} className="spin"/> : run.status === "success" ? <CheckCheck size={13}/> : null}{statuses[run.status]}</span></div>
+          <div className="collection-run-heading"><div><strong>{run.mode==="summarize"?"补全中文解读":run.trigger === "scheduled" ? "定时采集" : run.trigger === "retry" ? "重试采集" : "手动采集"}</strong><time dateTime={run.startedAt}>{formatTime(run.startedAt)}</time></div><span className={"collection-run-status status-" + run.status}>{run.status === "running" ? <Loader2 size={12} className="spin"/> : run.status === "success" ? <CheckCheck size={13}/> : null}{statuses[run.status]}</span></div>
+          {run.status==="running"&&<p className="collection-live-status" role="status">{phaseNames[run.stage||"loading"]||"正在处理"}：{run.currentLabel||"准备中"} · 已处理 {run.processed??0} 篇</p>}
           <dl className="collection-run-counts"><div><dt>新增</dt><dd>{count(run.added)}<small>篇</small></dd></div><div><dt>重复来源</dt><dd>{count(run.duplicates)}</dd></div><div><dt>找到</dt><dd>{count(run.found)}</dd></div><div><dt>检索</dt><dd>{count(run.queries)}</dd></div><div><dt>中文解读</dt><dd>{count(run.summarized)}</dd></div></dl>
           {run.finishedAt && <p className="collection-run-finished">完成于 {formatTime(run.finishedAt)}</p>}
-          {!!run.errors.length && <details className="collection-run-errors"><summary>{run.errors.length} 条提示</summary><ul>{run.errors.map((item, index) => <li key={index}>{item}</li>)}</ul></details>}
+          <p className="collection-run-finished">模型尝试：{run.stage==="pending"?"历史未记录":run.summaryAttempts??0} 次；成功保存中文解读：{run.summarized} 篇。</p>
+          {!!run.errors.length && <details className="collection-run-errors" open={run.status==="failed"||run.status==="partial"||run.status==="skipped"}><summary>{run.errors.length} 条提示</summary><ul>{run.errors.map((item, index) => <li key={index}>{item}</li>)}</ul></details>}
         </li>)}</ol>}
       </section>
     </>}

@@ -20,6 +20,7 @@ dialog{color:var(--text)}dialog::backdrop{background:rgba(23,45,34,.35);backdrop
 
 .signout-form{padding:0 12px 12px}.mobile-signout{display:none}@media(max-width:760px){.mobile-signout{display:block;margin-top:24px}}
 .search-source-tabs,.button-row{flex-wrap:wrap}
+.reader-summary-status{margin:12px 0;font-size:13px;line-height:1.9;color:#647957;overflow-wrap:anywhere}.reader-summary-status.form-error{color:#a24738}
 .collection-notice{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 20px;margin-bottom:20px;border:1px solid var(--line);border-radius:10px;background:#f4f7ef}.collection-notice strong{font-size:13px;color:#466047}.collection-notice p{font-size:11px;color:#788773;line-height:1.8;margin-top:5px}.collection-notice button{flex-shrink:0}@media(max-width:760px){.collection-notice{align-items:flex-start;flex-wrap:wrap;padding:15px}.collection-notice strong{font-size:14px}.collection-notice p{font-size:12px}}
 
 /* Keyword management and evidence-rich reading. */

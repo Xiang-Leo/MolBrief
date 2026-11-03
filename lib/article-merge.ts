@@ -22,6 +22,7 @@ export function applyGeneratedSummary(current: Article | undefined, generated: A
     ...current, title: generated.title, originalTitle: current.originalTitle ?? generated.originalTitle,
     summary: generated.summary, keyPoints: generated.keyPoints, limitations: generated.limitations,
     topics: generated.topics, deepDive: generated.deepDive ?? current.deepDive,
+    sourceText: current.sourceText ?? generated.sourceText,
     entities: mergeArticleEvidence(current, generated).entities,
   };
 }

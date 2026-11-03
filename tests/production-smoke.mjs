@@ -135,6 +135,15 @@ try {
   assert.equal(response.status, 200);
   collection = await response.json();
   assert.equal(collection.worker.healthy, true); assert.equal(collection.runs.length, 0);
+  assert.equal((await request('/api/collection',{session:true,body:{action:'run',mode:'unknown'}})).status,400);
+  assert.equal((await request('/api/collection',{session:true,body:{action:'run',mode:'summarize',limit:0}})).status,400);
+  response=await request('/api/collection',{session:true,body:{action:'run',mode:'summarize',limit:1}});
+  assert.equal(response.status,202);
+  response=await request('/api/collection/tick',{service:true,body:{},headers:{Origin:origin}});
+  assert.equal(response.status,200);collection=await response.json();
+  assert.equal(collection.runs[0].mode,'summarize');assert.equal(collection.runs[0].summaryAttempts,0);
+  assert.equal(collection.runs[0].stage,'finished');assert.equal(collection.today.summaries,0);
+  pass('backfill mode validates per-run limits and completes safely without a configured model or paid calls');
   response = await request('/api/collection', { session: true, body: { action: 'run' } });
   assert.equal(response.status, 202); assert.equal((await response.json()).queued, true);
   response = await request('/api/collection', { session: true, body: { action: 'run' } });

@@ -21,9 +21,9 @@ export async function POST(request: Request) {
     assertSameOrigin(request);
     const body = z.discriminatedUnion("action", [
       z.object({ action: z.literal("save"), settings: z.record(z.string(), z.unknown()) }).strict(),
-      z.object({ action: z.literal("run") }).strict(),
+      z.object({ action: z.literal("run"),mode:z.enum(["collect","summarize"]).optional(),limit:z.number().int().min(1).max(30).optional() }).strict(),
     ]).parse(await readBody(request, 16384));
     if (body.action === "save") return Response.json(saveCollectionSettings(body.settings), { headers });
-    return Response.json(enqueueCollection(), { status: 202, headers });
+    return Response.json(enqueueCollection(body.mode,body.limit), { status: 202, headers });
   } catch (error) { return failure(error); }
 }

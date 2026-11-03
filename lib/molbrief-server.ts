@@ -7,6 +7,7 @@ import { searchLiterature, LiteratureSearchError } from "./literature-search-cor
 import seedData from "@/data/seed.json";
 import { Article, DEFAULT_PREFERENCES, Preferences, STARTER_TOPICS, Topic } from "./molbrief-types";
 import { mergeArticleEvidence } from "./article-merge";
+import { chatCompletionPayload, completionContent, ModelResponseError } from "./model-request.mjs";
 
 type Runtime = NodeJS.ProcessEnv & {
   PARALLEL_API_KEY?: string;
@@ -28,7 +29,7 @@ export const capabilities = () => ({
   codex: false,
 });
 export class AppError extends Error {
-  constructor(message: string, public status = 400, public retryAfter?: number) { super(message); }
+  constructor(message: string, public status = 400, public retryAfter?: number, public code?: string) { super(message); }
 }
 export function errorResponse(error: unknown) {
   if (error instanceof AppError || error instanceof AuthError) return Response.json({ error: error.message }, { status: error.status, headers:error instanceof AppError&&error.retryAfter?{"Retry-After":String(error.retryAfter)}:undefined });
@@ -205,23 +206,30 @@ export async function webSearch(query:string, options:{signal?:AbortSignal}={}):
       publishedAt:/^\d{4}-\d{2}-\d{2}/.test(item.publish_date||"")?item.publish_date.slice(0,10):null,
       url,source:new URL(url).hostname,type:"网页检索",summary:abstract,keyPoints:[],
       limitations:"目前基于搜索摘录；来源观点与关键数据仍需核对原文。",topics:[query.slice(0,60)],
-      readingBasis:"搜索结果摘录",group:"检索结果",collectedAt:new Date().toISOString(),coverSource:null});
+      readingBasis:"搜索结果摘录",sourceText:abstract,group:"检索结果",collectedAt:new Date().toISOString(),coverSource:null});
   }
   return out;
 }
 export async function summarize(article:Article, options:{signal?:AbortSignal}={}):Promise<Article> {
+  if(!article.sourceText&&!article.deepDive&&article.type==="网页检索"&&article.readingBasis==="搜索结果摘录")article={...article,sourceText:article.summary};
   const config=runtime();
   if(!(config.LLM_API_KEY&&config.LLM_BASE_URL&&config.LLM_MODEL)) throw new AppError("中文解读需要先连接摘要模型。原始摘要和来源链接仍可阅读。",501);
   const base=new URL(config.LLM_BASE_URL!);
   if(base.protocol!=="https:"||base.username||base.password||base.search||base.hash) throw new AppError("模型服务地址需为不含账号或查询参数的 HTTPS API 根路径。",500);
   const url=base.href.replace(/\/$/,"")+"/chat/completions";
+  try {
   const response=await (await remote(url,{
     method:"POST",signal:options.signal,headers:{"Content-Type":"application/json",Authorization:"Bearer "+config.LLM_API_KEY},
-    body:JSON.stringify({model:config.LLM_MODEL,...buildSummaryRequest(article)}),
-  },60000)).json() as any;
-  try { return mergeModelSummary(article,response.choices?.[0]?.message?.content); }
+    body:JSON.stringify(chatCompletionPayload(config,buildSummaryRequest(article))),
+  },90000)).json() as any;
+  try { return mergeModelSummary(article,completionContent(response)); }
   catch(error) {
-    if(error instanceof SummaryOutputError) throw new AppError(error.message,502);
+    if(error instanceof ModelResponseError) throw new AppError(error.message,502,undefined,error.code);
+    if(error instanceof SummaryOutputError) throw new AppError(error.message,502,undefined,"model-invalid");
+    throw error;
+  }
+  } catch(error) {
+    if(error instanceof Error&&["TimeoutError","AbortError"].includes(error.name))throw new AppError("中文解读超过本次等待时间，原始内容已保留。请稍后重试，或检查模型服务响应速度。",504,undefined,"model-timeout");
     throw error;
   }
 }

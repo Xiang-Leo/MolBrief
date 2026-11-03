@@ -49,6 +49,8 @@ export const collectionState = sqliteTable("collection_state", {
   queuedAt: text("queued_at"), retryAt: text("retry_at"), retryOf: text("retry_of"),
   topicCursor: integer("topic_cursor").notNull().default(0), lastSeenAt: text("last_seen_at"),
   leaseToken: text("lease_token"), leaseExpiresAt: text("lease_expires_at"), activeRunId: text("active_run_id"),
+  queuedMode: text("queued_mode").notNull().default("collect"),
+  queuedLimit: integer("queued_limit").notNull().default(0),
 });
 export const collectionRuns = sqliteTable("collection_runs", {
   id: text("id").primaryKey(), trigger: text("trigger").notNull(), status: text("status").notNull(),
@@ -57,6 +59,10 @@ export const collectionRuns = sqliteTable("collection_runs", {
   added: integer("added").notNull().default(0), duplicates: integer("duplicates").notNull().default(0),
   summarized: integer("summarized").notNull().default(0), errorsJson: text("errors_json").notNull().default("[]"),
   planJson: text("plan_json").notNull().default("[]"), retryOf: text("retry_of"),
+  mode: text("mode").notNull().default("collect"), stage: text("stage").notNull().default("pending"),
+  currentLabel: text("current_label").notNull().default(""), processed: integer("processed").notNull().default(0),
+  summaryAttempts: integer("summary_attempts").notNull().default(0),
+  itemLimit: integer("item_limit").notNull().default(0),
 });
 export const collectionUsage = sqliteTable("collection_usage", {
   day: text("day").primaryKey(), webQueries: integer("web_queries").notNull().default(0),

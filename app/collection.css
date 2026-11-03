@@ -145,3 +145,4 @@
   .collection-run-counts{grid-template-columns:repeat(3,minmax(0,1fr));row-gap:12px}
 }
 @media(prefers-reduced-motion:reduce){.collection-toggle>input,.collection-toggle>input:before{transition:none}}
+.collection-batch-limit{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:15px;font-size:12px;color:#63725c}.collection-batch-limit select{min-height:40px;padding:6px 12px;border:1px solid #dce3d6;border-radius:7px;background:#fff}.collection-live-status{overflow-wrap:anywhere}

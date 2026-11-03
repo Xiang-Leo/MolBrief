@@ -22,7 +22,7 @@ export type View = "today" | "discover" | "saved" | "topics" | "settings" | "kno
 type CollectionSummary = {
   settings:{enabled:boolean;hour:number};nextRunAt:string|null;running:boolean;queued:boolean;
   worker:{lastSeenAt:string|null;healthy:boolean};
-  runs:{id:string;status:string;finishedAt:string|null;added:number}[];
+  runs:{id:string;status:string;finishedAt:string|null;added:number;summarized?:number;mode?:string}[];
 };
 const viewPaths: Record<View, string> = { today: "/", discover: "/discover", saved: "/saved", topics: "/topics", settings: "/settings", knowledge: "/knowledge" };
 const categories=["全部","产业","研究","工具","临床"];
@@ -116,6 +116,9 @@ export default function MolBrief({signedIn,displayName,initialView="today",initi
   const [serviceFocus,setServiceFocus]=useState<string|null>(null);
   const [topicBusy,setTopicBusy]=useState(false);
   const [busyId,setBusyId]=useState<string|null>(null);
+  const [summaryBusy,setSummaryBusy]=useState<string|null>(null);
+  const [summaryError,setSummaryError]=useState<{id:string;message:string}|null>(null);
+  const summaryRequest=useRef(false);
   const [hideRead,setHideRead]=useState(false);
   const [voices,setVoices]=useState<SpeechSynthesisVoice[]>([]);
   const [listening,setListening]=useState<Article|null>(null);
@@ -199,6 +202,7 @@ export default function MolBrief({signedIn,displayName,initialView="today",initi
     return {...s,score:(savedMatch?3:0)+(coreMatch?1:0),reason:savedMatch?"来自你的收藏 · "+s.anchor:"延伸自 "+s.anchor};
   }).sort((a,b)=>b.score-a.score).slice(0,4),[user.topics,user.saved,articles]);
   const recentCount=articles.filter(a=>a.group==="近期动态").length;
+  const lastCollectionResult=collection?.runs.find(run=>run.finishedAt);
   const sourceCount=new Set(articles.map(a=>new URL(a.url).hostname)).size;
   const knowledgeDirectory=useMemo(()=>buildKnowledgeDirectory(articles),[articles]);
   function entityHref(entity:ArticleEntity) {
@@ -218,6 +222,7 @@ export default function MolBrief({signedIn,displayName,initialView="today",initi
     finally{setRefreshing(false);}
   }
   function openArticle(a:Article) {
+    setSummaryError(null);
     setReader(a);
     if(user.signedIn&&!user.read.includes(a.id))api("reading",{articleId:a.id,action:"read",value:true}).then(setUser).catch(()=>{});
   }
@@ -293,14 +298,15 @@ export default function MolBrief({signedIn,displayName,initialView="today",initi
   async function interpret(a:Article) {
     if(!ensureLogin())return;
     if(!user.capabilities.llm){setConfigModal("llm");return;}
-    setBusyId(a.id);
+    if(summaryRequest.current)return;
+    summaryRequest.current=true;setSummaryBusy(a.id);setSummaryError(null);
     try{
       const result=await api("summarize",{article:a});
-      setReader(result.article);setArticles(prev=>[result.article,...prev.filter(x=>x.id!==a.id)]);
+      setReader(current=>current?.id===a.id?result.article:current);setArticles(prev=>[result.article,...prev.filter(x=>x.id!==a.id)]);
       setSearchResults(prev=>prev?.map(x=>x.id===a.id?result.article:x)||null);
       notify("中文解读已生成并收录。");
-    }catch(e){notify((e as Error).message);}
-    finally{setBusyId(null);}
+    }catch(e){setSummaryError({id:a.id,message:(e as Error).message});}
+    finally{summaryRequest.current=false;setSummaryBusy(null);}
   }
   function stopAudio(clear=true) {
     generationRef.current++;
@@ -403,12 +409,12 @@ export default function MolBrief({signedIn,displayName,initialView="today",initi
       <header className="topbar">
         <div className="mobile-brand"><Brand small/></div>
         <div className="breadcrumb">我的阅读空间 <ChevronRight size={13}/> <span>{view==="today"?"今日精选":view==="discover"?"探索发现":view==="saved"?"我的收藏":view==="topics"?"关键词与关注":view==="knowledge"?"药物与 BD 知识库":"偏好与连接"}</span></div>
-        <div className="topbar-actions"><label className="quick-search"><Search size={17}/><input aria-label="搜索已收录内容" value={localQuery} onChange={e=>{setLocalQuery(e.target.value);if(view!=="today"&&view!=="saved")setView("today");}} placeholder="搜索已收录内容"/>{localQuery&&<button onClick={()=>setLocalQuery("")} aria-label="清除搜索"><X size={14}/></button>}</label><button className="icon-btn help-button" onClick={()=>setHelpOpen(true)} aria-label="了解研览"><CircleHelp size={19}/></button><div className="topbar-avatar">{user.displayName.slice(0,1).toUpperCase()}</div></div>
+        <div className="topbar-actions"><label className="quick-search"><Search size={17}/><input aria-label="搜索已收录内容" value={localQuery} onChange={e=>{const value=e.target.value;if(view!=="today"&&view!=="saved")changeView("today");setLocalQuery(value);}} placeholder="搜索已收录内容"/>{localQuery&&<button onClick={()=>setLocalQuery("")} aria-label="清除搜索"><X size={14}/></button>}</label><button className="icon-btn help-button" onClick={()=>setHelpOpen(true)} aria-label="了解研览"><CircleHelp size={19}/></button><div className="topbar-avatar">{user.displayName.slice(0,1).toUpperCase()}</div></div>
       </header>
       <main className="workspace">
         {view==="today"&&<>
           <div className="page-heading"><div><div className="date-label"><span className="status-dot"/>{today}</div><h1>今天，读一点新进展<span>。</span></h1><p>从产业动态到研究前沿，为你的下一步积累线索。</p></div><button className="secondary-btn refresh-btn" onClick={refresh} disabled={refreshing}><RefreshCw size={15} className={refreshing?"spin":""}/>{refreshing?"正在刷新":"刷新内容"}</button></div>
-          {collection&&<section className="collection-notice" aria-label="自动采集状态"><div><strong>{collection.running?"正在采集新资料":collection.queued?"采集已排队":collection.settings.enabled?"每天 "+String(collection.settings.hour).padStart(2,"0")+":00 自动采集":"自动采集已暂停"}</strong><p>{collection.settings.enabled&&!collection.worker.healthy?"服务器采集进程尚未报到，请查看采集设置。":collection.nextRunAt?"下次："+new Date(collection.nextRunAt).toLocaleString("zh-CN",{timeZone:"Asia/Shanghai",month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit",hour12:false})+"（北京时间）":"可随时手动执行一次采集。"}{collection.runs.find(r=>r.finishedAt)&&" · 最近一轮新增 "+collection.runs.find(r=>r.finishedAt)!.added+" 篇"}</p></div><button className="text-link" onClick={()=>{changeView("settings");setTimeout(()=>document.getElementById("collection-settings")?.scrollIntoView({behavior:"smooth"}),100);}}>采集设置 <ArrowUpRight size={15}/></button></section>}
+          {collection&&<section className="collection-notice" aria-label="自动采集状态"><div><strong>{collection.running?"采集或解读任务运行中":collection.queued?"任务已排队":collection.settings.enabled?"每天 "+String(collection.settings.hour).padStart(2,"0")+":00 自动采集":"自动采集已暂停"}</strong><p>{collection.settings.enabled&&!collection.worker.healthy?"服务器采集进程尚未报到，请查看采集设置。":collection.nextRunAt?"下次："+new Date(collection.nextRunAt).toLocaleString("zh-CN",{timeZone:"Asia/Shanghai",month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit",hour12:false})+"（北京时间）":"可随时手动执行一次采集。"}{lastCollectionResult&&" · 最近一轮"+(lastCollectionResult.mode==="summarize"?"补全 "+(lastCollectionResult.summarized??0)+" 篇中文解读":"新增 "+lastCollectionResult.added+" 篇")+(["partial","failed","skipped","interrupted"].includes(lastCollectionResult.status)?"，请查看运行提示":"")}</p></div><button className="text-link" onClick={()=>{changeView("settings");setTimeout(()=>document.getElementById("collection-settings")?.scrollIntoView({behavior:"smooth"}),100);}}>采集设置 <ArrowUpRight size={15}/></button></section>}
           <section className="briefing-banner">
             <div className="briefing-copy"><div className="banner-kicker"><AudioLines size={15}/> YOUR PERSONAL BRIEFING</div><h2>换一种方式，听见新知。</h2><p>{articles.length} 篇精选 · 药企、研究与 AI 制药<br className="mobile-break"/> · 每条都能回到原文</p><button onClick={()=>articles[0]&&listen(articles[0],articles)} className="listen-btn"><Play size={14} fill="currentColor"/>听一条精选<ArrowRight size={16}/></button><span className="audio-disclosure">{user.capabilities.tts&&user.preferences.audioMode==="cloud"?"AI 配音 · 使用已连接音色":"设备朗读 · 声音随浏览器而异"}</span></div>
             <div className="banner-art" aria-hidden="true"><div className="orbit orbit-one"/><div className="orbit orbit-two"/><div className="orbit-dot"/><div className="audio-disc"><Headphones size={40} strokeWidth={1.2}/></div><div className="waveform">{[9,18,28,13,36,47,24,56,36,64,39,22,43,29,18,34,13,8].map((h,i)=><i key={i} style={{height:h}}/>)}</div><div className="banner-caption">LESS NOISE. MORE INSIGHT.</div></div>
@@ -495,7 +501,9 @@ export default function MolBrief({signedIn,displayName,initialView="today",initi
         {!!reader.entities?.some(e=>e.provenance==="curated")&&<section className="reader-section"><h2>相关药物、靶点与合作</h2><div className="reader-entity-links">{reader.entities.filter(e=>e.provenance==="curated").map((e,i)=><a key={i} href={entityHref(e)}><span>{ENTITY_TYPE_LABELS[e.type]}</span>{e.name}<ArrowUpRight size={14}/></a>)}</div></section>}
         {reader.sourceReview&&<p className="source-review">来源核对 {reader.sourceReview.checkedAt.slice(0,10)} · {reader.sourceReview.note}</p>}
         <section className="reader-section"><h2>沿着这篇，继续探索</h2><div className="reader-topic-list">{reader.topics.map(t=>{const followed=user.topics.some(x=>x.name.toLowerCase()===t.toLowerCase());return <button key={t} disabled={topicBusy} onClick={()=>addTopic(t)}>{followed?<Check size={13}/>:<Plus size={13}/>} {t}{followed&&" · 已关注"}</button>;})}</div>{topicNotice&&<p className="form-success" role="status">{topicNotice}</p>}{topicError&&<p className="form-error" role="alert">{topicError}</p>}</section>
-        {<button className="secondary-btn full" onClick={()=>interpret(reader)} disabled={busyId===reader.id}>{busyId===reader.id?<Loader2 size={16} className="spin"/>:<Sparkles size={16}/>}{reader.deepDive?"基于现有材料更新解读":"生成扩展中文解读"}{!user.capabilities.llm&&" · 需连接模型"}</button>}
+        <button className="secondary-btn full" onClick={()=>interpret(reader)} disabled={!!summaryBusy}>{summaryBusy===reader.id?<Loader2 size={16} className="spin"/>:<Sparkles size={16}/>}{summaryBusy===reader.id?"正在生成中文解读…":reader.deepDive?"基于现有材料更新解读":"生成扩展中文解读"}{!user.capabilities.llm&&" · 需连接模型"}</button>
+        {summaryBusy===reader.id&&<p className="reader-summary-status" role="status">正在根据现有材料整理中文解读，通常需要数十秒；请勿重复点击。</p>}
+        {summaryError?.id===reader.id&&<p className="form-error reader-summary-status" role="alert">{summaryError.message}</p>}
         <a className="original-link" href={reader.url} target="_blank" rel="noopener noreferrer"><div><span>回到原始来源</span><strong>{reader.source}</strong><small>{new URL(reader.url).hostname}</small></div><ArrowUpRight size={24}/></a>
         <p className="reader-disclaimer">摘要帮助你快速了解信息。关键判断，请结合原始材料。</p>
       </article></>}

@@ -43,6 +43,37 @@ async function fixture(t, settings = {}, initial = INITIAL) {
 }
 const runNow = async (store, adapters) => { store.enqueue(); return store.tick(adapters); };
 
+test('backfill updates only pending articles, exposes in-flight progress and respects a one-article request limit',async t=>{
+  const f=await fixture(t,{enabled:false,maxSummariesPerDay:3});
+  const raw=article('raw'),second=article('second'),curated=article('curated',{deepDive:{background:'Reviewed'}});
+  for(const a of [raw,second,curated])await f.adapters.insert(a);
+  f.adapters.capabilities.llm=true;
+  f.adapters.summarize=async a=>{
+    const status=f.store.status();assert.equal(status.runs[0].stage,'summarizing');assert.equal(status.runs[0].summaryAttempts,1);assert.equal(status.today.summaries,1);
+    return {...a,summary:'中文解读',deepDive:{background:'仅依据原始摘要'}};
+  };
+  f.adapters.updateSummary=async(original,generated)=>!!f.database.prepare('UPDATE articles SET payload=? WHERE id=?').bind(JSON.stringify(generated),original.id).run().meta.changes;
+  f.store.enqueue('summarize',1);const status=await f.store.tick(f.adapters);
+  assert.equal(status.runs[0].mode,'summarize');assert.equal(status.runs[0].summarized,1);assert.equal(status.runs[0].added,0);assert.equal(status.runs[0].processed,1);
+  assert.equal(status.runs[0].stage,'finished');assert.equal(f.calls.length,0);
+  const articles=await f.adapters.getArticles();assert.equal(articles.length,3);assert.deepEqual(articles.find(a=>a.id===curated.id),curated);assert.equal(articles.find(a=>a.id===second.id).deepDive,undefined);
+});
+
+test('backfill with an exhausted budget makes no model requests and reports why no article changed',async t=>{
+  const f=await fixture(t,{maxSummariesPerDay:0});await f.adapters.insert(article('pending'));f.adapters.capabilities.llm=true;
+  f.adapters.updateSummary=async()=>{throw new Error('must not write');};f.store.enqueue('summarize');
+  const status=await f.store.tick(f.adapters);assert.equal(f.summaries.length,0);assert.equal(status.runs[0].summaryAttempts,0);assert.equal(status.runs[0].status,'skipped');
+  assert.ok(status.runs[0].errors.some(message=>message.includes('上限已用完')));
+});
+
+test('a failed summary remains pending and cannot trigger another collection of new articles',async t=>{
+  const f=await fixture(t,{summarize:true});f.addTopic('topic');f.adapters.capabilities.llm=true;
+  f.adapters.summarize=async()=>{throw Object.assign(new Error('secret not to display'),{code:'model-timeout'});};
+  const result=await runNow(f.store,f.adapters);assert.equal(result.runs[0].status,'partial');assert.equal(result.runs[0].summaryAttempts,2);
+  assert.ok(result.runs[0].errors[0].includes('超时'));assert.ok(!JSON.stringify(result).includes('secret not to display'));
+  f.clock.value+=20*MINUTE;const idle=await f.store.tick(f.adapters);assert.equal(idle.skipped,'not-due');assert.equal(f.calls.length,1);
+});
+
 test('Beijing daily schedule, settings validation and heartbeat are independent of host timezone', async t => {
   const initial = Date.UTC(2026, 10, 2, 23, 30), f = await fixture(t, {}, initial);
   assert.deepEqual(f.store.status().settings, DEFAULT_COLLECTION_SETTINGS);
