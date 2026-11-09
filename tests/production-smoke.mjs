@@ -88,7 +88,7 @@ try {
   assert.ok([302, 303, 307].includes(response.status));
   assert.ok(response.headers.get('location')?.endsWith('/login'));
   pass('home requires the independent account');
-  for (const route of ['/topics', '/settings', '/knowledge', '/knowledge/drug-duvakitug']) {
+  for (const route of ['/topics', '/settings', '/knowledge', '/knowledge/drug-duvakitug', '/targets']) {
     response = await request(route);
     assert.ok([302, 303, 307, 308].includes(response.status), route + ' requires login');
     assert.ok(response.headers.get('location')?.endsWith('/login'));
@@ -98,7 +98,7 @@ try {
   pass('login form renders');
   response = await request('/api/feed', { headers: { 'oai-authenticated-user-id': 'fake', 'oai-authenticated-user-email': 'fake@example.com' } });
   assert.equal(response.status, 401); pass('old hosting identity headers cannot authenticate');
-  for (const route of ['/api/settings', '/api/knowledge']) {
+  for (const route of ['/api/settings', '/api/knowledge', '/api/target-research?q=EGFR']) {
     assert.equal((await request(route)).status, 401);
     assert.equal((await request(route, { service: true })).status, 401);
   }
@@ -256,6 +256,7 @@ try {
   assert.ok(curatedDrug); assert.equal(curatedDrug.fields.find(field => field.key === 'target').value, 'Smoke curated target');
   assert.ok(curatedDrug.sourceUrls.includes(article.url));
   pass('knowledge API aggregates the supplied curated entity and its sourced facts');
+  response=await request('/api/target-research?id=invalid',{session:true});assert.equal(response.status,400);pass('target query validates IDs before any external request');
 
   const staleArticle={...article,summary:'A stale search-result abstract.',keyPoints:[]};
   for(const field of ['entities','deepDive','sourceText','sourceReview'])delete staleArticle[field];
@@ -281,7 +282,7 @@ try {
   const css = html.match(/href="([^\"]*\/_next\/static\/[^\"]+\.css[^\"]*)"/); assert.ok(css);
   assert.equal((await request(css[1].replaceAll('&amp;', '&'))).status, 200);
   pass('home HTML, styles and PWA assets are served by the standalone bundle');
-  for (const [route, marker] of [['/topics', 'topic-name'], ['/settings', '服务连接'], ['/knowledge', '知识库'], ['/knowledge/drug-duvakitug', '知识库']]) {
+  for (const [route, marker] of [['/topics', 'topic-name'], ['/settings', '服务连接'], ['/knowledge', '知识库'], ['/knowledge/drug-duvakitug', '知识库'], ['/targets','查询靶点']]) {
     response = await request(route, { session: true }); assert.equal(response.status, 200, route + ' page');
     assert.ok((await response.text()).includes(marker), route + ' expected page content');
   }

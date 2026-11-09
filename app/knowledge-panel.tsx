@@ -128,6 +128,7 @@ export default function KnowledgePanel({ articles, initialEntityId, onOpenArticl
       <div><p className="knowledge-eyebrow"><BookOpen size={15}/> KNOWLEDGE COLLECTION</p><h1>沿着一条线索，继续读<span>。</span></h1><p className="knowledge-intro">围绕药物、靶点与合作，把分散的信息放回同一张资料卡。</p></div>
       <button className="secondary-btn" onClick={() => openForm(selected || undefined)}><Plus size={16}/>补充资料</button>
     </header>
+    <p><a className="secondary-btn" href="/targets">进入靶点研究：功能、疾病关联与药物线索</a></p>
     <p className="knowledge-coverage">仅汇总当前已收录的 {articles.length} 篇材料；其中 {coveredArticles} 篇带有结构化记录，共 {total} 个专题。覆盖范围随资料积累扩展。</p>
     {saveMessage && <p className="knowledge-notice" role="status">{saveMessage}</p>}
 

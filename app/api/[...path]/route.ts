@@ -1,4 +1,5 @@
 import { z } from "zod";
+import {targetResearch,TargetResearchError} from "@/lib/target-research";
 import { verifyServiceToken } from "@/lib/auth";
 import { readAudioObject } from "@/lib/local-storage";
 import {
@@ -35,6 +36,11 @@ export async function GET(request:Request) {
       return Response.json(await getState(),{headers:{"Cache-Control":"private, no-store"}});
     }
     if(path.startsWith('summary-status/')){await signedIn();return Response.json(await summaryStatus(path.slice('summary-status/'.length)),{headers:{'Cache-Control':'private, no-store'}});}
+    if(path==="target-research") {
+      await signedIn();const u=new URL(request.url);
+      try{return Response.json(await targetResearch({query:u.searchParams.get('q')||undefined,id:u.searchParams.get('id')||undefined}),{headers:{'Cache-Control':'private, no-store'}});}
+      catch(e){if(e instanceof TargetResearchError)throw new AppError(e.message,e.status);throw e;}
+    }
     if(path==="knowledge") {
       await signedIn();
       return Response.json(buildKnowledgeDirectory(await getArticles()),{headers:{"Cache-Control":"private, no-store"}});

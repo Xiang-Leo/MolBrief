@@ -11,6 +11,7 @@ import {
 import seedData from "@/data/seed.json";
 import ServiceSettingsPanel from "./service-settings";
 import KnowledgePanel from "./knowledge-panel";
+import TargetPanel from "./target-panel";
 import CollectionSettingsPanel from "./collection-settings";
 import { buildKnowledgeDirectory, ENTITY_TYPE_LABELS } from "@/lib/knowledge-core";
 import type { ArticleEntity } from "@/lib/knowledge-types";
@@ -18,18 +19,19 @@ import {
   Article, Category, DEFAULT_PREFERENCES, Preferences, STARTER_TOPICS, Topic, UserState,
 } from "@/lib/molbrief-types";
 
-export type View = "today" | "discover" | "saved" | "topics" | "settings" | "knowledge";
+export type View = "today" | "discover" | "saved" | "topics" | "settings" | "knowledge" | "targets";
 type CollectionSummary = {
   settings:{enabled:boolean;hour:number};nextRunAt:string|null;running:boolean;queued:boolean;
   worker:{lastSeenAt:string|null;healthy:boolean};
   runs:{id:string;status:string;finishedAt:string|null;added:number;summarized?:number;mode?:string}[];
 };
-const viewPaths: Record<View, string> = { today: "/", discover: "/discover", saved: "/saved", topics: "/topics", settings: "/settings", knowledge: "/knowledge" };
+const viewPaths: Record<View, string> = { today: "/", discover: "/discover", saved: "/saved", topics: "/topics", settings: "/settings", knowledge: "/knowledge", targets:"/targets" };
 const categories=["全部","产业","研究","工具","临床"];
 const categoryNames:Record<string,string>={全部:"全部内容",产业:"产业动态",研究:"研究论文",工具:"AI 工具",临床:"临床进展"};
 const navItems=[
   {view:"today" as View,label:"今日精选",icon:BookOpen},
   {view:"discover" as View,label:"探索发现",icon:Compass},
+  {view:"targets" as View,label:"靶点研究",icon:Microscope},
   {view:"knowledge" as View,label:"药物与 BD 知识库",icon:FlaskConical},
   {view:"saved" as View,label:"我的收藏",icon:Bookmark},
 ];
@@ -426,7 +428,7 @@ export default function MolBrief({signedIn,displayName,initialView="today",initi
     <div className="main-shell">
       <header className="topbar">
         <div className="mobile-brand"><Brand small/></div>
-        <div className="breadcrumb">我的阅读空间 <ChevronRight size={13}/> <span>{view==="today"?"今日精选":view==="discover"?"探索发现":view==="saved"?"我的收藏":view==="topics"?"关键词与关注":view==="knowledge"?"药物与 BD 知识库":"偏好与连接"}</span></div>
+        <div className="breadcrumb">我的阅读空间 <ChevronRight size={13}/> <span>{view==="today"?"今日精选":view==="discover"?"探索发现":view==="saved"?"我的收藏":view==="topics"?"关键词与关注":view==="knowledge"?"药物与 BD 知识库":view==="targets"?"靶点研究":"偏好与连接"}</span></div>
         <div className="topbar-actions"><label className="quick-search"><Search size={17}/><input aria-label="搜索已收录内容" value={localQuery} onChange={e=>{const value=e.target.value;if(view!=="today"&&view!=="saved")changeView("today");setLocalQuery(value);}} placeholder="搜索已收录内容"/>{localQuery&&<button onClick={()=>setLocalQuery("")} aria-label="清除搜索"><X size={14}/></button>}</label><button className="icon-btn help-button" onClick={()=>setHelpOpen(true)} aria-label="了解研览"><CircleHelp size={19}/></button><div className="topbar-avatar">{user.displayName.slice(0,1).toUpperCase()}</div></div>
       </header>
       <main className="workspace">
@@ -480,6 +482,7 @@ export default function MolBrief({signedIn,displayName,initialView="today",initi
           <section className="topics-section"><div className="section-heading"><h2>长期关注 <span className="count-pill">{activeTopics.filter(t=>t.kind==="core").length}</span></h2><span>由你决定，持续保留</span></div><div className="topic-grid">{activeTopics.filter(t=>t.kind==="core").map(t=><div className="topic-card" key={t.id}><div className="topic-card-header"><span className="topic-dot"/><h3>{t.name}</h3><button className="icon-btn" onClick={()=>modifyTopic(t,"remove")} aria-label={"移除 "+t.name}><X size={16}/></button></div><p>{t.reason}</p><div className="topic-card-actions"><button className="text-link" onClick={()=>runSearch(user.capabilities.parallel?t.name:topicSearchQuery(t.name,t.query),user.capabilities.parallel?"web":"pubmed")}>检索相关资料 <ArrowUpRight size={15}/></button><button className="quiet-btn" onClick={()=>{setEditingTopic(t);setEditingQuery(t.query);}}>编辑检索式</button></div></div>)}</div></section>
           <section className="topics-section"><div className="section-heading"><h2>探索中的方向 <span className="count-pill">{activeTopics.filter(t=>t.kind==="explore").length}</span></h2><span>14 天试用 · 最多 10 个</span></div><div className="topic-grid">{activeTopics.filter(t=>t.kind==="explore").map(t=><div className="topic-card exploration" key={t.id}><div className="topic-card-header"><Sparkles size={16}/><h3>{t.name}</h3><button className="icon-btn" onClick={()=>modifyTopic(t,"remove")} aria-label={"移除 "+t.name}><X size={16}/></button></div><p>{t.reason}</p><div className="topic-card-bottom"><small>至 {formatDate(t.expiresAt?.slice(0,10)||null)}</small><button className="text-link" onClick={()=>modifyTopic(t,"promote")}>长期关注 <Plus size={14}/></button></div></div>)}</div>{!activeTopics.some(t=>t.kind==="explore")&&<div className="empty-inline"><Compass size={23}/><p>探索新的方向后，相关主题会出现在这里。</p><button className="text-link" onClick={()=>changeView("discover")}>去探索 <ArrowRight size={14}/></button></div>}</section>
         </>}
+        {view==="targets"&&<TargetPanel articles={articles} topics={user.topics} onOpen={openArticle} onFollow={async(name,query)=>{setUser(await api("topics",{action:"add",name,query}));}} onSummarize={async a=>{if(summaryRequest.current)return;try{const saved=await api("article",{article:a});setArticles(prev=>[saved.article,...prev.filter(x=>x.id!==a.id)]);openArticle(saved.article);await interpret(saved.article);}catch(e){notify((e as Error).message);}}}/>}
         {view==="knowledge"&&<KnowledgePanel articles={articles} initialEntityId={initialEntityId} onOpenArticle={openArticle} onSaveArticle={saveArticle}/>}
         {view==="settings"&&<>
           <div className="page-heading"><div><div className="date-label"><Settings2 size={15}/> MAKE IT YOURS</div><h1>按照你的习惯，慢慢读<span>。</span></h1><p>声音、关注与服务连接，都由你掌握。</p></div></div>
@@ -498,7 +501,7 @@ export default function MolBrief({signedIn,displayName,initialView="today",initi
       </main>
     </div>
     <nav className="mobile-nav" aria-label="手机导航">{[
-      {v:"today" as View,label:"今日",icon:BookOpen},{v:"discover" as View,label:"发现",icon:Compass},{v:"knowledge" as View,label:"知识库",icon:FlaskConical},{v:"saved" as View,label:"收藏",icon:Bookmark},{v:"topics" as View,label:"我的",icon:Settings2},
+      {v:"today" as View,label:"今日",icon:BookOpen},{v:"discover" as View,label:"发现",icon:Compass},{v:"targets" as View,label:"靶点",icon:Microscope},{v:"knowledge" as View,label:"知识库",icon:FlaskConical},{v:"saved" as View,label:"收藏",icon:Bookmark},{v:"topics" as View,label:"我的",icon:Settings2},
     ].map(({v,label,icon:Icon})=><button key={v} className={view===v||(v==="topics"&&view==="settings")?"active":""} onClick={()=>changeView(v)}><Icon size={21}/><span>{label}</span></button>)}</nav>
     {listening&&<section className="audio-player" aria-label="朗读播放器"><div className="player-progress" style={{width:audioProgress+"%"}}/><div className="player-art"><AudioLines size={24}/></div><button className="player-title" onClick={()=>openArticle(listening)}><span>{audioKind}{playing?" · 正在播放":audioBusy?" · 正在生成":" · 已暂停"}</span><strong>{listening.title}</strong></button><div className="player-controls"><button className="icon-btn previous-track" onClick={()=>nextAudio(-1)} aria-label="上一条"><ChevronLeft size={21}/></button><button className="player-play" onClick={togglePlayback} disabled={audioBusy} aria-label={playing?"暂停":"播放"}>{audioBusy?<Loader2 size={19} className="spin"/>:playing?<Pause size={18} fill="currentColor"/>:<Play size={18} fill="currentColor"/>}</button><button className="icon-btn" onClick={()=>nextAudio(1)} aria-label="下一条"><ChevronRight size={21}/></button><span className="player-speed">{user.preferences.speed} ×</span><button className="icon-btn" onClick={()=>stopAudio()} aria-label="关闭播放器"><X size={18}/></button></div></section>}
     <dialog ref={dialogRef} className="reader-dialog" onCancel={()=>setReader(null)} onClick={e=>{if(e.target===e.currentTarget)setReader(null);}}>
@@ -508,6 +511,9 @@ export default function MolBrief({signedIn,displayName,initialView="today",initi
         <div className="reader-source"><div><ShieldCheck size={15}/>{reader.source}</div><span>{readMinutes(reader)} 分钟阅读</span></div>
         <div className="reader-actions"><button className="primary-btn" disabled={audioBusy&&listening?.id===reader.id} onClick={()=>listening?.id===reader.id?togglePlayback():listen(reader,articles)}>{listening?.id===reader.id&&playing?<Pause size={16}/>:<Headphones size={16}/>} {listening?.id===reader.id?(audioBusy?"正在生成":playing?"暂停朗读":audioProgress>=100?"重新收听":"继续朗读"):"收听摘要"}</button><button className="secondary-btn" disabled={busyId===reader.id} onClick={()=>toggleSaved(reader)}><Bookmark size={16} fill={user.saved.includes(reader.id)?"currentColor":"none"}/>{user.saved.includes(reader.id)?"已收藏":"收藏"}</button><a className="secondary-btn" href={reader.url} target="_blank" rel="noopener noreferrer">打开原文 <ExternalLink size={14}/></a></div>
         <div className="reading-basis"><FileText size={15}/><span>阅读依据：{reader.readingBasis}</span></div>
+        {reader.publicationInfo&&<p className="source-review">日期口径：{reader.publicationInfo.basis==="online"?"在线发表":reader.publicationInfo.basis==="journal"?"期刊发表":reader.publicationInfo.basis==="unknown"?"待核实":"来源记载"}{reader.publicationInfo.journalDate&&" · 原始卷期日期 "+reader.publicationInfo.journalDate}{reader.publicationInfo.note&&" · "+reader.publicationInfo.note}</p>}
+        {reader.summaryReview&&<p className="source-review">AI 解读 · {reader.summaryReview.generatedAt.slice(0,10)} · {reader.summaryReview.materialScope==="provided-source-excerpt"?"基于原始摘录":"基于已有整理材料"}；尚未人工逐条审校</p>}
+        {reader.sourceText&&<details className="reader-source-excerpt"><summary>查看解读所依据的原始材料</summary><p>{reader.sourceText}</p></details>}
         <section className="reader-section"><h2>内容摘要</h2><div className="reader-summary">{reader.summary.split(/\n+/).filter(Boolean).map((p,i)=><p key={i}>{p}</p>)}</div></section>
         {reader.deepDive?.background&&<section className="reader-section"><h2>背景与问题</h2><p className="deep-dive-text">{reader.deepDive.background}</p></section>}
         {!!reader.deepDive?.keyFindings?.length&&<section className="reader-section"><h2>主要发现与研究设计</h2><ul className="deep-dive-list">{reader.deepDive.keyFindings.map((p,i)=><li key={i}>{p}</li>)}</ul></section>}
@@ -519,6 +525,7 @@ export default function MolBrief({signedIn,displayName,initialView="today",initi
         {!!reader.entities?.some(e=>e.provenance==="curated")&&<section className="reader-section"><h2>相关药物、靶点与合作</h2><div className="reader-entity-links">{reader.entities.filter(e=>e.provenance==="curated").map((e,i)=><a key={i} href={entityHref(e)}><span>{ENTITY_TYPE_LABELS[e.type]}</span>{e.name}<ArrowUpRight size={14}/></a>)}</div></section>}
         {reader.sourceReview&&<p className="source-review">来源核对 {reader.sourceReview.checkedAt.slice(0,10)} · {reader.sourceReview.note}</p>}
         <section className="reader-section"><h2>沿着这篇，继续探索</h2><div className="reader-topic-list">{reader.topics.map(t=>{const followed=user.topics.some(x=>x.name.toLowerCase()===t.toLowerCase());return <button key={t} disabled={topicBusy} onClick={()=>addTopic(t)}>{followed?<Check size={13}/>:<Plus size={13}/>} {t}{followed&&" · 已关注"}</button>;})}</div>{topicNotice&&<p className="form-success" role="status">{topicNotice}</p>}{topicError&&<p className="form-error" role="alert">{topicError}</p>}</section>
+        <a className="secondary-btn full" href="/targets"><Microscope size={16}/>前往靶点研究</a>
         <button className="secondary-btn full" onClick={()=>interpret(reader)} disabled={!!summaryBusy}>{summaryBusy===reader.id?<Loader2 size={16} className="spin"/>:<Sparkles size={16}/>}{summaryBusy===reader.id?"正在生成中文解读…":reader.deepDive?"基于现有材料更新解读":"生成扩展中文解读"}{!user.capabilities.llm&&" · 需连接模型"}</button>
         {summaryBusy===reader.id&&<p className="reader-summary-status" role="status">{summaryProgress}</p>}
         {summaryBusy&&summaryBusy!==reader.id&&<p className="reader-summary-status" role="status">另一篇文章正在解读，完成后可继续。</p>}

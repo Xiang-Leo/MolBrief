@@ -1,4 +1,5 @@
 import { z } from "zod";
+import {safeArticleDate,publicationDates} from "./publication-date.mjs";
 import { AuthError, assertSameOrigin, getCurrentUser } from "./auth";
 import { audioObjectExists, getDatabase, writeAudioObject } from "./local-storage";
 import { getServiceRuntime } from "./service-config";
@@ -84,11 +85,11 @@ export async function getArticles(_options: {userScoped?:boolean} = {}): Promise
   for (const r of rows.results) {
     try { const a = JSON.parse(r.payload) as Article; combined.set(a.url, a); } catch { /* isolated bad row */ }
   }
-  return [...combined.values()].sort((a,b) => (b.publishedAt || "0000").localeCompare(a.publishedAt || "0000"));
+  return [...combined.values()].map(a=>safeArticleDate(a) as Article).sort((a,b) => (b.publishedAt || "0000").localeCompare(a.publishedAt || "0000"));
 }
 export async function ingest(values: unknown[]) {
   const now = new Date().toISOString();
-  const parsed = values.map((x) => articleSchema.parse(x));
+  const parsed = values.map((x) => safeArticleDate(articleSchema.parse(x)));
   const statements = [];
   const pending = new Map<string, Article>();
   for (const item of parsed) {
@@ -203,7 +204,7 @@ export async function webSearch(query:string, options:{signal?:AbortSignal}={}):
     const url=canonicalUrl(item.url);
     const abstract=(item.excerpts||[]).join("\n").slice(0,9000)||"请打开原文查看详情。";
     out.push({id:"art-"+(await hash(url)).slice(0,16),title:item.title,category:"产业",
-      publishedAt:/^\d{4}-\d{2}-\d{2}/.test(item.publish_date||"")?item.publish_date.slice(0,10):null,
+      ...publicationDates({reported:item.publish_date?.slice(0,10)}),
       url,source:new URL(url).hostname,type:"网页检索",summary:abstract,keyPoints:[],
       limitations:"目前基于搜索摘录；来源观点与关键数据仍需核对原文。",topics:[query.slice(0,60)],
       readingBasis:"搜索结果摘录",sourceText:abstract,group:"检索结果",collectedAt:new Date().toISOString(),coverSource:null});

@@ -138,3 +138,10 @@ test('collection cancellation aborts the provider request without starting a fal
   await assert.rejects(searchLiterature('nanobody', { signal: controller.signal, fetcher: async () => { calls++; } }), error => error.name === 'AbortError');
   assert.equal(calls, 1);
 });
+
+test('online publication takes precedence over future journal issue; future-only dates stay unknown',()=>{
+ const online=xml.replace('</ArticleTitle>','</ArticleTitle><ArticleDate DateType="Electronic"><Year>2026</Year><Month>07</Month><Day>14</Day></ArticleDate>').replace('<Year>2026</Year><Month>Oct</Month><Day>27</Day>','<Year>2027</Year><Month>Feb</Month><Day>1</Day>');
+ const a=parseNcbiArticles(online,'x',now)[0];assert.equal(a.publishedAt,'2026-07-14');assert.equal(a.publicationInfo.journalDate,'2027-02-01');assert.equal(a.publicationInfo.basis,'online');
+ const b=parseNcbiArticles(online.replace(/<ArticleDate[\s\S]*?<\/ArticleDate>/,''),'x',now)[0];assert.equal(b.publishedAt,null);assert.match(b.publicationInfo.note,/未来/);
+ const c=parseEuropePmcArticles({resultList:{result:[{...record,electronicPublicationDate:'2027-03-01',journalInfo:{dateOfPublication:'2027-04-02'}}]}},'x',now)[0];assert.equal(c.publishedAt,null);
+});

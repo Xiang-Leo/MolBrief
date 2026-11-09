@@ -6,6 +6,8 @@ export type Article = ArticleKnowledge & {
   originalTitle?: string;
   category: Category;
   publishedAt: string | null;
+  publicationInfo?: {basis: string; reportedDate: string|null; journalDate: string|null; note?: string};
+  summaryReview?: {version:number; generatedAt:string; materialScope:string};
   url: string;
   source: string;
   type: string;

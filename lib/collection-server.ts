@@ -1,3 +1,4 @@
+import {safeArticleDate} from "./publication-date.mjs";
 import { CollectionStore } from "./collection-core.mjs";
 import {
   articleSchema, canonicalUrl, capabilities, db, getArticles, hash,
@@ -40,7 +41,7 @@ async function updateCollectedSummary(original:Article,generated:Article):Promis
 // Automated discovery only adds new URLs. A concurrent manual edit or import
 // wins the unique URL constraint, preserving all existing evidence and state.
 async function insertDiscoveredArticle(value: Article): Promise<boolean> {
-  const article = articleSchema.parse(value);
+  const article = articleSchema.parse(safeArticleDate(value));
   const url = canonicalUrl(article.url);
   const id = "art-" + (await hash(url)).slice(0, 16);
   const collectedAt = new Date().toISOString();

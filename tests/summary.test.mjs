@@ -135,3 +135,7 @@ test('incomplete or invalid model JSON cannot replace existing data; sparse mate
   assert.equal(mergeModelSummary(article, short).summary, short.summary);
   assert.equal(article.summary, 'Existing source excerpt.');
 });
+
+test('raw source takes priority over previous model prose and English-only output cannot overwrite content',()=>{
+ const p=JSON.parse(buildSummaryRequest({...article,sourceText:'Original measurements only.',summary:'Old generated prose.',deepDive:result.deepDive}).messages[1].content);assert.equal(p.summary,undefined);assert.equal(p.deepDive,undefined);assert.equal(p.sourceText,'Original measurements only.');assert.throws(()=>mergeModelSummary(article,{...result,summary:'English only result.'}),SummaryOutputError);const next=mergeModelSummary({...article,sourceText:'Source'},result);assert.equal(next.summaryReview.version,2);assert.equal(next.summaryReview.materialScope,'provided-source-excerpt');
+});
