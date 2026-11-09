@@ -139,3 +139,9 @@ test('incomplete or invalid model JSON cannot replace existing data; sparse mate
 test('raw source takes priority over previous model prose and English-only output cannot overwrite content',()=>{
  const p=JSON.parse(buildSummaryRequest({...article,sourceText:'Original measurements only.',summary:'Old generated prose.',deepDive:result.deepDive}).messages[1].content);assert.equal(p.summary,undefined);assert.equal(p.deepDive,undefined);assert.equal(p.sourceText,'Original measurements only.');assert.throws(()=>mergeModelSummary(article,{...result,summary:'English only result.'}),SummaryOutputError);const next=mergeModelSummary({...article,sourceText:'Source'},result);assert.equal(next.summaryReview.version,2);assert.equal(next.summaryReview.materialScope,'provided-source-excerpt');
 });
+
+test('provider top-level limitations lists are normalized without loosening source validation',()=>{
+ const next=mergeModelSummary(article,{...result,limitations:['仅为数据库关联。','不代表已验证疗效。']});assert.equal(next.limitations,'仅为数据库关联。\n不代表已验证疗效。');
+ for(const limitations of [[],[{}],[''],['x'.repeat(1900)]])assert.throws(()=>mergeModelSummary(article,{...result,limitations}),SummaryOutputError);
+ assert.throws(()=>mergeModelSummary(article,{...result,limitations:['限制'],deepDive:{...result.deepDive,quantitativeEvidence:[{label:'x',value:'1',sourceUrl:'https://invented.invalid'}]}}),SummaryOutputError);
+});

@@ -91,7 +91,7 @@ export const SUMMARY_SYSTEM_PROMPT = `你是严谨的中文制药研究编辑。
 临床材料必须区分随机人群、初治者、应答者子集及可评估人群。II期应答者子集的结果不能表述为所有初治者疗效；不能把会议预告或试验启动写成结果，不能把计算筛选、动物或体外证据写成人体疗效。
 BD交易中潜在总价、首付款、近期款、本次里程碑分别列示，保留触发条件与币种；潜在总价不是已支付金额。本次里程碑金额未披露就写“未披露”，不能写0或推算，不能把近期款都说成首付。
 sourceText若存在，只是提供的原始摘录，不表示已阅读全文；若不存在，仅基于既有summary、keyPoints、deepDive、limitations和readingBasis。保持阅读依据与证据边界，链接复核通过也不等于阅读全文或核实全部科学结论。
-任何sourceUrl只能从allowedSourceUrls逐字选用，不补造引用或其他链接。不要输出entities或实体事实，不改变人工curated记录。输出JSON对象：title,summary,keyPoints,limitations,topics,deepDive。deepDive的结构为{background:string,keyFindings:string[],quantitativeEvidence:{label:string,value:string,context?:string,sourceUrl?:string}[],implications:string[],limitations:string[],nextQuestions:string[]}。没有定量材料时quantitativeEvidence为空数组，不创造数字。`;
+任何sourceUrl只能从allowedSourceUrls逐字选用，不补造引用或其他链接。不要输出entities或实体事实，不改变人工curated记录。药物、基因、试验名称保留原文全名，不自行翻译、缩写或混同；APPROVAL是数据库阶段标签，不据此写成某药在所列疾病均已获批。By similarity等跨物种或同源推断限定不得省略。没有提供某一领域数据时，不凭知识补写该领域的结论或例子。输出JSON对象：title和summary为字符串，keyPoints和topics为字符串数组，顶层limitations必须是单一字符串，deepDive为对象。deepDive的结构为{background:string,keyFindings:string[],quantitativeEvidence:{label:string,value:string,context?:string,sourceUrl?:string}[],implications:string[],limitations:string[],nextQuestions:string[]}。没有定量材料时quantitativeEvidence为空数组，不创造数字。`;
 
 export function buildSummaryRequest(article: SummarySource) {
   return {
@@ -112,7 +112,16 @@ export function buildSummaryRequest(article: SummarySource) {
 
 export function mergeModelSummary<T extends SummarySource>(article: T, raw: unknown): T & z.infer<typeof modelSummarySchema> {
   let data: z.infer<typeof modelSummarySchema>;
-  try { data = modelSummarySchema.parse(typeof raw === 'string' ? JSON.parse(raw) : raw); }
+  try {
+    const value = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    // Providers sometimes return the top-level limitations as a list, like the
+    // nested deepDive field. Join only validated strings; never coerce objects.
+    const compatible = value && typeof value === 'object' && Array.isArray(value.limitations)
+      && value.limitations.length > 0 && value.limitations.length <= 8
+      && value.limitations.every((item:unknown)=>typeof item === 'string' && item.trim())
+      ? {...value,limitations:value.limitations.join('\n')} : value;
+    data = modelSummarySchema.parse(compatible);
+  }
   catch { throw new SummaryOutputError('模型未返回完整、有效的中文解读，请检查模型的 JSON 输出兼容性。'); }
   if(!/[\u3400-\u9fff]/u.test(data.summary))throw new SummaryOutputError('模型没有返回中文概要，本次未覆盖原始材料。');
   const allowed = summarySourceUrls(article);
