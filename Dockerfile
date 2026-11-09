@@ -19,7 +19,7 @@ COPY --from=builder --chown=molbrief:molbrief /app/.next/static ./.next/static
 COPY --from=builder --chown=molbrief:molbrief /app/public ./public
 COPY --from=builder --chown=molbrief:molbrief /app/drizzle ./drizzle
 COPY --from=builder --chown=molbrief:molbrief /app/scripts ./scripts
-COPY --from=builder --chown=molbrief:molbrief /app/lib/storage-core.mjs ./lib/storage-core.mjs
+COPY --from=builder --chown=molbrief:molbrief /app/lib/storage-core.mjs /app/lib/publication-date.mjs /app/lib/literature-search-core.mjs ./lib/
 COPY --from=builder --chown=molbrief:molbrief /app/data/content-export.json ./data/content-export.json
 USER molbrief
 EXPOSE 3000
