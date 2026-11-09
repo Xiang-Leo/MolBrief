@@ -32,6 +32,9 @@ docker compose up -d --build
 
 ## 现在有什么
 
+- [靶点研究](https://todayai.xxlab.xyz/targets)：免费查询人类靶点、功能与通路、疾病关联及临床候选；支持关注定期检索和基于官方快照的中文解读。关联评分与药物阶段均保留数据范围说明。
+- 日期区分在线发表与期刊卷期，未来日期不冒充已发表；中文解读可展开所依据的原始材料。
+
 - [关键词与检索式](https://todayai.xxlab.xyz/topics)：添加并检索、仅保存、修改查询；NCBI 受限时使用明确标注的 Europe PMC MED 题录备用。
 - [药物、靶点与 BD 知识库](https://todayai.xxlab.xyz/knowledge)：首批 13 专题，来源事实、时间线及手工补充资料；已收录证据持续保留。
 - [网页服务设置](https://todayai.xxlab.xyz/settings)：加密保存 API 配置，保存后立即生效，实际调用状态单独验证。
